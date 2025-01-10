@@ -23,5 +23,5 @@ public class SubMbPredLayer
 // The mb_pred Syntax structure.
 public class MbPred
 {
-
+    
 }

@@ -29,67 +29,11 @@ public class AVCDecoderConfigurationRecord : Box
     public short AVCProfileIndication { get; set; }
     public short ProfileCompatibility { get; set; }
     public short AVCLevelIndication { get; set; }
-
     public short LengthSizeMinusOne { get; set; }
     public short NumberOfSequenceParameterSets { get; set; }
     public short NumberOfParameterSets { get; set; }
-
     public List<long> SequencyParameterSets { get; set; } = default!;
     public List<long> PictureParameterSets { get; set; } = default!;
-
-    public long SetPPSNALUnit(byte[] Psp)
-    {
-        try
-        {
-            using (MemoryStream memoryStream = new MemoryStream(Psp))
-            {
-                this.PictureParameterSets = new List<long>();
-                for (int i = 0; i < this.NumberOfParameterSets; i++)
-                {
-                    byte[] PictureParameterSetLengthBuffer = new byte[2];
-                    memoryStream.Read(PictureParameterSetLengthBuffer, 0, PictureParameterSetLengthBuffer.Length);
-                    Array.Reverse(PictureParameterSetLengthBuffer);
-
-                    ushort PictureParameterSetLength = BitConverter.ToUInt16(PictureParameterSetLengthBuffer, 0);
-                    long PictureParameterSetNALUnit = 8 * PictureParameterSetLength;
-
-                    this.PictureParameterSets.Add(PictureParameterSetNALUnit);
-                }
-                return this.PictureParameterSets.Sum();
-            }
-        }
-        catch (System.Exception)
-        {
-            throw;
-        }
-    }
-
-    public long SetSPSNALUnit(byte[] Sps)
-    {
-        try
-        {
-            using (MemoryStream memoryStream = new MemoryStream(Sps))
-            {
-                this.SequencyParameterSets = new List<long>();
-                for (int i = 0; i < this.NumberOfSequenceParameterSets; i++)
-                {
-                    byte[] SequencyParameterSetLengthBuffer = new byte[2];
-                    memoryStream.Read(SequencyParameterSetLengthBuffer, 0, SequencyParameterSetLengthBuffer.Length);
-                    Array.Reverse(SequencyParameterSetLengthBuffer);
-
-                    ushort SequencyParameterSetLength = BitConverter.ToUInt16(SequencyParameterSetLengthBuffer, 0);
-                    long SequenceParameterSetNALUnit = (8 * SequencyParameterSetLength);
-
-                    SequencyParameterSets.Add(SequenceParameterSetNALUnit);
-                }
-                return this.SequencyParameterSets.Sum();
-            }
-        }
-        catch (System.Exception)
-        {
-            throw;
-        }
-    }
 }
 
 public class VisualSampleEntry : SampleEntry
@@ -111,20 +55,6 @@ public class VisualSampleEntry : SampleEntry
     public string[] CompressorName { get; set; } = default!;
     public ushort Depth { get; set; }
     public short PreDefined { get; set; }
-}
-
-public class NALUnit
-{
-    public int ForbiddenZeroBit { get; set; }
-    public int NalRefIdc { get; set; }
-    public int NalUnitType { get; set; }
-    public long Start { get; set; }
-    public long End { get; set; }
-    public ulong NalUnitLength { get; set; }
-    public uint svc_extension_flag { get; set; }
-    public uint avc_3d_extension_flag { get; set; }
-    public byte[] rbsp_byte { get; set; } = default!;
-    public uint emulation_prevention_three_byte { get; set; }
 }
 
 public class NALUnitHeaderMVCExtension
