@@ -1,4 +1,6 @@
-namespace mp4.boxes
+using System;
+using System.IO;
+namespace mp4.boxes;
 
 public class SampleEntry : Box
 {

@@ -1,4 +1,6 @@
-namespace h264.syntaxstructures
+using System;
+
+namespace h264.syntaxstructures;
 
 public class SubMbPredLayer
 {
@@ -6,6 +8,7 @@ public class SubMbPredLayer
     public SubMbPredLayer(uint mb_type)
     {
         mbtype = mb_type;
+        
     }
 
     public SubMbPredLayer GetSubMbPredLayer()

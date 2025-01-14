@@ -1,4 +1,5 @@
-namespace h264.NALUnit
+using System.Collections;
+namespace h264.NALUnits;
 
 public class NALUnit
 {
@@ -12,4 +13,28 @@ public class NALUnit
     public uint avc_3d_extension_flag { get; set; }
     public byte[] rbsp_byte { get; set; } = default!;
     public uint emulation_prevention_three_byte { get; set; }
+}
+
+public class AccessUnitDelimiter : NALUnit
+{
+    public AccessUnitDelimiter()
+    {
+
+    }
+
+    public AccessUnitDelimiter access_unit_delimiter_rbsp(byte[] audBytes)
+    {
+        try
+        {
+            // this.primary_pic_type = bitStream.read_bits(3);
+            // bitStream.rbsp_trailing_bits();
+            
+            return this;
+        }
+        catch (System.Exception ex)
+        {
+            throw new Exception("Problem parsing Aud", ex);
+        }
+    }
+    public uint primary_pic_type { get; set; }
 }
