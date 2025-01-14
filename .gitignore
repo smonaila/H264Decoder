@@ -1,12 +1,12 @@
 SegmentFile/Data/ftype.mp4
-h264Service/bin/*
-h264Service/obj/*
+h264Service/bin
+h264Service/obj
 
-h264ServiceTests/bin/*
-h264ServiceTests/obj/*
+h264ServiceTests/bin
+h264ServiceTests/obj
 
-SegmentFile/bin/*
-SegmentFile/obj/*
+SegmentFile/bin
+SegmentFile/obj
 
-SegmentFile/Data/*
+SegmentFile/Data
 
