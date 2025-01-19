@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "Tsot7BqkNSQ=",
+  "dgSpecHash": "Lszg7y8Vgnk=",
   "success": true,
-  "projectFilePath": "C:\\H264Decoder\\h264Service\\h264Service.csproj",
+  "projectFilePath": "c:\\H264Decoder\\h264Service\\h264Service.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\smona\\.nuget\\packages\\microsoft.netcore.platforms\\1.1.0\\microsoft.netcore.platforms.1.1.0.nupkg.sha512",
     "C:\\Users\\smona\\.nuget\\packages\\microsoft.netcore.targets\\1.1.0\\microsoft.netcore.targets.1.1.0.nupkg.sha512",
@@ -11,5 +11,12 @@
     "C:\\Users\\smona\\.nuget\\packages\\system.text.encoding\\4.3.0\\system.text.encoding.4.3.0.nupkg.sha512",
     "C:\\Users\\smona\\.nuget\\packages\\system.threading.tasks\\4.3.0\\system.threading.tasks.4.3.0.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1900",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Error occurred while getting package vulnerability data: Unable to load the service index for source https://api.nuget.org/v3/index.json."
+    }
+  ]
 }

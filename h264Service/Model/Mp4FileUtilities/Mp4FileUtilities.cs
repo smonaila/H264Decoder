@@ -1,10 +1,33 @@
 using System;
+using h264.NALUnits;
+using h264.utilities;
 using mp4.boxes;
 
 namespace mp4.utilities;
 
 public class Mp4FileUtilities
 {
+    public static string GetCurrentNumberedDirectory(string path, string boxName)
+    {
+        string currentMultiDirectory = string.Empty;
+        try
+        {
+            string traksDirectory = string.Format("{0}", path);
+            var traksDirectories = (from dir in Directory.GetDirectories(traksDirectory)
+                                    where dir.Replace(traksDirectory, "").Split("_")[0].Equals(boxName)
+                                    select dir).ToList();
+
+            int trakIndex = traksDirectories.Count > 0 ? (from dir in traksDirectories
+                                                          select int.Parse(dir.Replace(traksDirectory, "").Split("_")[1])).Max() : 1;
+            currentMultiDirectory = string.Format(@"{0}\{1}", traksDirectory, string.Format("{0}_{1}", boxName, trakIndex));
+        }
+        catch (System.Exception ex)
+        {
+            throw;
+        }
+        return currentMultiDirectory;
+    }
+
     public static List<BoxInf> GetChildrens(byte[] Atom)
     {
         try
@@ -372,7 +395,7 @@ public class Mp4FileUtilities
         }
     }
 
-    private static Stbl GetStbl(byte[] stblBox)
+    public static Stbl GetStbl(byte[] stblBox)
     {
         try
         {
@@ -463,7 +486,7 @@ public class Mp4FileUtilities
         }
     }
 
-    private static (bool isStartCode, int NumberOfBytes) GetStartCode(byte[] StartCode)
+    public static (bool isStartCode, int NumberOfBytes) GetStartCode(byte[] StartCode)
     {
         using (MemoryStream memoryStream = new MemoryStream(StartCode))
         {
@@ -494,7 +517,7 @@ public class Mp4FileUtilities
             return (IsStartCode, NumberOfBytes);
         }
     }
-    private static Stsz GetStsz(byte[] stszBox)
+    public static Stsz GetStsz(byte[] stszBox)
     {
         try
         {
@@ -544,7 +567,7 @@ public class Mp4FileUtilities
         }
     }
 
-    private static Stsd GetStsd(byte[] stsdBox)
+    public static Stsd GetStsd(byte[] stsdBox)
     {
         try
         {
@@ -677,39 +700,34 @@ public class Mp4FileUtilities
                                 aVCDecoderConfiguration.AVCProfileIndication = (short)(((DecorderConfigurations << 8) >> 24) & 255);
                                 aVCDecoderConfiguration.ProfileCompatibility = (short)(((((DecorderConfigurations << 16) >> 24))) & 255);
                                 aVCDecoderConfiguration.AVCLevelIndication = (short)((((DecorderConfigurations << 24) >> 24) & 255));
-                                aVCDecoderConfiguration.LengthSizeMinusOne = (short)((LengthMinusSize & 3) + 1);
+                                aVCDecoderConfiguration.LengthSizeMinusOne = (short)((LengthMinusSize & 3));
                                 aVCDecoderConfiguration.NumberOfSequenceParameterSets = (short)(SequenceSets & 31);
 
+                                Stsd.GetAVCDecoderConfiguration = aVCDecoderConfiguration;
+
                                 // Sequence Parameter Sets
-                                // byte[] SequenceSetsBytes = new byte[2 * aVCDecoderConfiguration.NumberOfSequenceParameterSets];
+                                byte[] SequenceSetsBytes = new byte[2 * aVCDecoderConfiguration.NumberOfSequenceParameterSets];
 
-                                // memoryStream.Read(SequenceSetsBytes, 0, SequenceSetsBytes.Length);
-                                // long NalUnitLength = aVCDecoderConfiguration.SetSPSNALUnit(SequenceSetsBytes) / 8;
-                                // // int NumBytesInRBSP = 0;
+                                memoryStream.Read(SequenceSetsBytes, 0, SequenceSetsBytes.Length);
+                                long NalUnitLength = aVCDecoderConfiguration.SetSPSNALUnit(SequenceSetsBytes) / 8;
 
-                                // NALUnit SPSNalUnit = new NALUnit();
-                                // byte[] NALHeader = new byte[2];
-                                // ushort NALHeaderInt = 0;
-                                // NALHeader[1] = 0;
-                                // memoryStream.Read(NALHeader, 0, 1);
-                                // NALHeaderInt = BitConverter.ToUInt16(NALHeader, 0);
-                                // SPSNalUnit.ForbiddenZeroBit = NALHeaderInt & 128;
-                                // SPSNalUnit.NalRefIdc = NALHeaderInt & 96;
-                                // SPSNalUnit.NalUnitType = NALHeaderInt & 31;
+                                byte[] NALHeader = new byte[2];
+                                ushort NALHeaderInt = 0;
+                                NALHeader[1] = 0;
+                                memoryStream.Read(NALHeader, 0, 1);
+                                NALHeaderInt = BitConverter.ToUInt16(NALHeader, 0);
+                                
+                                SPS SPS;
+                                if ((NALHeaderInt & 31) == 7)
+                                {
+                                    byte[] spsBuffer = new byte[NalUnitLength - 1];
+                                    memoryStream.Read(spsBuffer, 0, spsBuffer.Length);    
 
-                                // if (SPSNalUnit.NalUnitType == 14 || SPSNalUnit.NalUnitType == 20
-                                // || SPSNalUnit.NalUnitType == 21)
-                                // {
-                                //     if (SPSNalUnit.NalUnitType != 21)
-                                //     {
-                                //         SPSNalUnit.svc_extension_flag = memoryStream.read_bits(1) & 128;
-                                //     }
-                                //     else
-                                //     {
-                                //         SPSNalUnit.avc_3d_extension_flag = memoryStream.read_bits(1) & 128;
-                                //     }
-                                // }
-                                // SPSNalUnit.rbsp_byte = new byte[NalUnitLength - 1];
+                                    SPS = H264Utilities.seq_parameter_set_rbsp(spsBuffer);
+                                    SPS.ForbiddenZeroBit = NALHeaderInt & 128;
+                                    SPS.NalRefIdc = NALHeaderInt & 96;
+                                    SPS.NalUnitType = NALHeaderInt & 31;
+                                }                                
 
                                 // // Create a BitArray
                                 // byte[] bitArrayBuffer = new byte[NalUnitLength - 1];
@@ -799,7 +817,7 @@ public class Mp4FileUtilities
         }
     }
 
-    private static Ctts GetCtts(byte[] cttsBox)
+    public static Ctts GetCtts(byte[] cttsBox)
     {
         try
         {
@@ -843,7 +861,7 @@ public class Mp4FileUtilities
         }
     }
 
-    private static Stco GetStco(byte[] stcoBox)
+    public static Stco GetStco(byte[] stcoBox)
     {
         try
         {
@@ -899,6 +917,7 @@ public class Mp4FileUtilities
                 EntryCount = BitConverter.ToUInt32(EntryCountBuffer);
 
                 Stsc Stsc = new Stsc(StscInfo.BoxSize, StscInfo.Name!);
+                Stsc.EntryCount = EntryCount;
                 Stsc.ChunkTableEntries = new List<Stsc.ChunkTable>();
                 for (int i = 0; i < EntryCount; i++)
                 {
@@ -950,6 +969,7 @@ public class Mp4FileUtilities
                 EntryCount = BitConverter.ToUInt32(EntryCountBuffer, 0);
 
                 Stts Stts = new Stts(SttsInfo.BoxSize, SttsInfo.Name!);
+                Stts.EntryCount = EntryCount;
                 Stts.TimeToSample = new List<Stts.TimeToSampleTable>();
                 for (int i = 0; i < EntryCount; i++)
                 {
@@ -965,7 +985,6 @@ public class Mp4FileUtilities
                     Stts.TimeToSampleTable sampleTable = new Stts.TimeToSampleTable();
                     sampleTable.SampleCount = BitConverter.ToUInt32(SampleCountBuffer, 0);
                     sampleTable.SampleDelta = BitConverter.ToUInt32(SampleDeltaBuffer, 0);
-
 
                     Stts.TimeToSample.Add(sampleTable);
                 }

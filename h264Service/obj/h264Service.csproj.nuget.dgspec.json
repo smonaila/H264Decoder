@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\H264Decoder\\h264Service\\h264Service.csproj": {}
+    "c:\\H264Decoder\\h264Service\\h264Service.csproj": {}
   },
   "projects": {
-    "C:\\H264Decoder\\h264Service\\h264Service.csproj": {
+    "c:\\H264Decoder\\h264Service\\h264Service.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\H264Decoder\\h264Service\\h264Service.csproj",
+        "projectUniqueName": "c:\\H264Decoder\\h264Service\\h264Service.csproj",
         "projectName": "h264Service",
-        "projectPath": "C:\\H264Decoder\\h264Service\\h264Service.csproj",
+        "projectPath": "c:\\H264Decoder\\h264Service\\h264Service.csproj",
         "packagesPath": "C:\\Users\\smona\\.nuget\\packages\\",
-        "outputPath": "C:\\H264Decoder\\h264Service\\obj\\",
+        "outputPath": "c:\\H264Decoder\\h264Service\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\smona\\AppData\\Roaming\\NuGet\\NuGet.Config",

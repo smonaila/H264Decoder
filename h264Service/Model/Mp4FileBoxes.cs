@@ -8,10 +8,12 @@ public class SampleEntry : Box
     public SampleEntry(string format)
     {
         _format = format;
+        Format = format;
     }
 
     public uint[] Reserved { get; set; } = default!;
     public ushort DataReferenceIndex { get; set; }
+    public string Format { get; set; } = string.Empty;
 }
 
 public class AVCDecoderConfigurationRecord : Box
@@ -25,6 +27,38 @@ public class AVCDecoderConfigurationRecord : Box
     {
         BoxName = name;
         BoxSize = size;
+    }
+
+    /// <summary>
+    /// The method calculate the sum of the sizes of all the sequency parameter set available in your byte stream.
+    /// </summary>
+    /// <param name="Sps">Bytes with all the Sequency Parameter Set</param>
+    /// <returns>The sum of sizes of the SPS</returns>
+    public long SetSPSNALUnit(byte[] Sps)
+    {
+        try
+        {
+            using (MemoryStream memoryStream = new MemoryStream(Sps))
+            {
+                this.SequencyParameterSets = new List<long>();
+                for (int i = 0; i < this.NumberOfSequenceParameterSets; i++)
+                {
+                    byte[] SequencyParameterSetLengthBuffer = new byte[2];
+                    memoryStream.Read(SequencyParameterSetLengthBuffer, 0, SequencyParameterSetLengthBuffer.Length);
+                    Array.Reverse(SequencyParameterSetLengthBuffer);
+
+                    ushort SequencyParameterSetLength = BitConverter.ToUInt16(SequencyParameterSetLengthBuffer, 0);
+                    long SequenceParameterSetNALUnit = (8 * SequencyParameterSetLength);
+
+                    this.SequencyParameterSets.Add(SequenceParameterSetNALUnit);
+                }
+                return this.SequencyParameterSets.Sum();
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new Exception("There was an error calculating the sum of SPS.");
+        }
     }
 
     public short ConfigurationVersion { get; set; }
@@ -282,6 +316,8 @@ public class Stsd : FullBox
     public AudioSampleEntry Audio { get; set; } = default!;
     public VisualSampleEntry Video { get; set; } = default!;
 
+    public AVCDecoderConfigurationRecord GetAVCDecoderConfiguration { get; set; } = default!;
+
     public enum StreamType
     {
         Video = 1,
@@ -348,5 +384,6 @@ public class Stsc : FullBox
 
     }
 
+    public uint EntryCount { get; set; }
     public List<ChunkTable> ChunkTableEntries { get; set; } = default!;
 }
