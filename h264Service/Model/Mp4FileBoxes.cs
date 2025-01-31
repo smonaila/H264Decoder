@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using h264.NALUnits;
+using h264.utilities;
 namespace mp4.boxes;
 
 public class SampleEntry : Box
@@ -27,6 +29,38 @@ public class AVCDecoderConfigurationRecord : Box
     {
         BoxName = name;
         BoxSize = size;
+    }
+
+    /// <summary>
+    /// The method calculate the sum of the sizes of all the picture parameter set available in your byte stream.
+    /// </summary>
+    /// <param name="Psp"></param>
+    /// <returns></returns>
+    public long SetPPSNALUnit(byte[] Psp)
+    {
+        try
+        {
+            using (MemoryStream memoryStream = new MemoryStream(Psp))
+            {
+                this.PictureParameterSets = new List<long>();
+                for (int i = 0; i < this.NumberOfParameterSets; i++)
+                {
+                    byte[] PictureParameterSetLengthBuffer = new byte[2];
+                    memoryStream.Read(PictureParameterSetLengthBuffer, 0, PictureParameterSetLengthBuffer.Length);
+                    Array.Reverse(PictureParameterSetLengthBuffer);
+
+                    ushort PictureParameterSetLength = BitConverter.ToUInt16(PictureParameterSetLengthBuffer, 0);
+                    long PictureParameterSetNALUnit = 8 * PictureParameterSetLength;
+
+                    this.PictureParameterSets.Add(PictureParameterSetNALUnit);
+                }
+                return this.PictureParameterSets.Sum();
+            }
+        }
+        catch (System.Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
@@ -70,6 +104,9 @@ public class AVCDecoderConfigurationRecord : Box
     public short NumberOfParameterSets { get; set; }
     public List<long> SequencyParameterSets { get; set; } = default!;
     public List<long> PictureParameterSets { get; set; } = default!;
+
+    public SPS GetSPS { get; set; } = default!;
+    public PPS GetPPS { get; set; } = default!;
 }
 
 public class VisualSampleEntry : SampleEntry
@@ -172,6 +209,7 @@ public class Ftyp : Box
 
 public class FullBox : Box
 {
+    public FullBox(){ }
     public FullBox(uint size, string name, int flagsVersion = 0) : base(size, name)
     {
         BoxSize = size;
@@ -209,6 +247,7 @@ public class Mvhd : FullBox
 {
     public Mvhd(uint size, string name, int flagsVersion) : base(size, name, flagsVersion)
     {
+
     }
 
     public int CreationTime { get; set; }
@@ -307,6 +346,7 @@ public class Stsz : FullBox
 
 public class Stsd : FullBox
 {
+    public Stsd(){ }
     public Stsd(uint size, string name, int flagsVersion = 0) : base(size, name, flagsVersion)
     {
 

@@ -72,7 +72,7 @@ public class FactoryMethods
                         Utilities.GetDirectory(ftypPath);
                         Utilities.SaveFile(string.Format(@"{0}\", ftypPath), string.Format("{0}.bin", BoxName), FtypBox);
 
-                        // UtilityReaders.GetFtyp(FtypBox);
+                        Mp4FileUtilities.GetFtyp(FtypBox);
                     }
 
                     if (BoxName == "moov")
@@ -88,11 +88,8 @@ public class FactoryMethods
 
                         moov(moovBox, Filename);
 
-                        // UtilityReaders.GetMoov(moovBox);
-                    }  
-                    // Console.Write("Current BoxName: {0}\t", BoxName);
-                    // Console.WriteLine("Current BoxSize: {0}", BoxSize);
-
+                        Mp4FileUtilities.GetMoov(moovBox);
+                    } 
                     ByteOffset += BoxSize;
                 }
             }

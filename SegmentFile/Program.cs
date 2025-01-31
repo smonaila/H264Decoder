@@ -10,4 +10,4 @@ string getFilename()
     return filename;
 }
 
-factoryMethods.GetFirstLevelBoxes(string.Format(@".\Data\{0}", getFilename()));
+factoryMethods.GetFirstLevelBoxes(string.Format(@"C:\H264Decoder\SegmentFile\Data\{0}", getFilename()));

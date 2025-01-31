@@ -10,3 +10,10 @@ SegmentFile/obj
 
 SegmentFile/Data
 
+h264Service/obj/project.assets.json
+h264Service/obj/h264Service.csproj.nuget.dgspec.json
+h264Service/obj/project.nuget.cache
+h264Service.Tests/obj/Debug/net8.0/h264Service.Tests.AssemblyInfoInputs.cache
+h264Service.Tests/obj/Debug/net8.0/h264Service.Tests.csproj.AssemblyReference.cache
+h264Service/obj/h264Service.csproj.nuget.dgspec.json
+h264Service/obj/project.assets.json

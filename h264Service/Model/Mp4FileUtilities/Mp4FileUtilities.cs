@@ -1,11 +1,14 @@
 using System;
 using h264.NALUnits;
 using h264.utilities;
+using H264Utilities.Descriptors;
+using H264Utilities.Parsers;
 using mp4.boxes;
+using H264_Utilities = h264.utilities.H264Utilities;
 
 namespace mp4.utilities;
 
-public class Mp4FileUtilities
+public static class Mp4FileUtilities
 {
     public static string GetCurrentNumberedDirectory(string path, string boxName)
     {
@@ -21,7 +24,7 @@ public class Mp4FileUtilities
                                                           select int.Parse(dir.Replace(traksDirectory, "").Split("_")[1])).Max() : 1;
             currentMultiDirectory = string.Format(@"{0}\{1}", traksDirectory, string.Format("{0}_{1}", boxName, trakIndex));
         }
-        catch (System.Exception ex)
+        catch (System.Exception)
         {
             throw;
         }
@@ -476,7 +479,7 @@ public class Mp4FileUtilities
                     memoryStream.Read(StszBox, 0, StszBox.Length);
                     Stbl.Stsz = GetStsz(StszBox);
                 }
-                // GetFrame(Stbl);
+                H264_Utilities.GetFrame(Stbl);
                 return Stbl;
             }
         }
@@ -703,106 +706,45 @@ public class Mp4FileUtilities
                                 aVCDecoderConfiguration.LengthSizeMinusOne = (short)((LengthMinusSize & 3));
                                 aVCDecoderConfiguration.NumberOfSequenceParameterSets = (short)(SequenceSets & 31);
 
-                                Stsd.GetAVCDecoderConfiguration = aVCDecoderConfiguration;
-
                                 // Sequence Parameter Sets
                                 byte[] SequenceSetsBytes = new byte[2 * aVCDecoderConfiguration.NumberOfSequenceParameterSets];
 
                                 memoryStream.Read(SequenceSetsBytes, 0, SequenceSetsBytes.Length);
                                 long NalUnitLength = aVCDecoderConfiguration.SetSPSNALUnit(SequenceSetsBytes) / 8;
 
-                                byte[] NALHeader = new byte[2];
-                                ushort NALHeaderInt = 0;
-                                NALHeader[1] = 0;
-                                memoryStream.Read(NALHeader, 0, 1);
-                                NALHeaderInt = BitConverter.ToUInt16(NALHeader, 0);
-                                
-                                SPS SPS;
-                                if ((NALHeaderInt & 31) == 7)
-                                {
-                                    byte[] spsBuffer = new byte[NalUnitLength - 1];
-                                    memoryStream.Read(spsBuffer, 0, spsBuffer.Length);    
+                                byte[] NalUnitRBSP = new byte[NalUnitLength];
+                                memoryStream.Read(NalUnitRBSP, 0, NalUnitRBSP.Length);
 
-                                    SPS = H264Utilities.seq_parameter_set_rbsp(spsBuffer);
-                                    SPS.ForbiddenZeroBit = NALHeaderInt & 128;
-                                    SPS.NalRefIdc = NALHeaderInt & 96;
-                                    SPS.NalUnitType = NALHeaderInt & 31;
+                                NALUnit NalUnit = H264Parsers.nal_unit(NalUnitRBSP, NalUnitLength);
+                                
+                                SPS? SPS = null;
+                                PPS? PPS = null;
+
+                                if ((NalUnit.NalUnitType & 31) == 7)
+                                {   
+                                    SPS = H264Parsers.seq_parameter_set_rbsp(NalUnit.rbsp_byte);
+                                    aVCDecoderConfiguration.GetSPS = SPS;
                                 }                                
 
-                                // // Create a BitArray
-                                // byte[] bitArrayBuffer = new byte[NalUnitLength - 1];
-                                // memoryStream.Read(SPSNalUnit.rbsp_byte, 0, SPSNalUnit.rbsp_byte.Length);
-                                // BitArray bitStream = new BitArray(SPSNalUnit.rbsp_byte);
+                                memoryStream.Read(ParameterSetsBuffer, 0, 1);
+                                short ParameterSets = BitConverter.ToInt16(ParameterSetsBuffer, 0);
+                                aVCDecoderConfiguration.NumberOfParameterSets = ParameterSets;
 
-                                // // for (int j = 1; j < NalUnitLength; j++)
-                                // // {
-                                // //     if (j + 2 < NalUnitLength && memoryStream.next_bits(24) == 0x000003)
-                                // //     {
-                                // //         SPSNalUnit.rbsp_byte[NumBytesInRBSP++] = (byte)bitStream.read_bits(8);
-                                // //         SPSNalUnit.rbsp_byte[NumBytesInRBSP++] = (byte)bitStream.read_bits(8);
-                                // //         j += 2;
-                                // //         SPSNalUnit.emulation_prevention_three_byte = bitStream.read_bits(24);
-                                // //     }
-                                // //     else
-                                // //     {
-                                // //         SPSNalUnit.rbsp_byte[NumBytesInRBSP++] = (byte)bitStream.read_bits(8);
-                                // //     }
-                                // // }
-                                // SPS Sps = new SPS();
-                                // SPS sps_data = Sps.seq_parameter_set_data(SPSNalUnit.rbsp_byte);
+                                byte[] ParameterSetsBytes = new byte[2 * aVCDecoderConfiguration.NumberOfParameterSets];
+                                memoryStream.Read(ParameterSetsBytes, 0, ParameterSetsBytes.Length);
+                                NalUnitLength = aVCDecoderConfiguration.SetPPSNALUnit(ParameterSetsBytes) / 8;
 
-                                // // memoryStream.Position += 2 * aVCDecoderConfiguration.NumberOfSequenceParameterSets;
-                                // // Picture Parameter Sets
+                                NalUnitRBSP = new byte[NalUnitLength];
+                                memoryStream.Read(NalUnitRBSP, 0, NalUnitRBSP.Length);
 
-                                // memoryStream.Read(ParameterSetsBuffer, 0, 1);
-                                // short ParameterSets = BitConverter.ToInt16(ParameterSetsBuffer, 0);
-                                // aVCDecoderConfiguration.NumberOfParameterSets = (short)(ParameterSets);
-
-                                // byte[] ParameterSetsBytes = new byte[2 * aVCDecoderConfiguration.NumberOfParameterSets];
-                                // memoryStream.Read(ParameterSetsBytes, 0, ParameterSetsBytes.Length);
-
-                                // NalUnitLength = aVCDecoderConfiguration.SetPPSNALUnit(ParameterSetsBytes) / 8;
-                                // memoryStream.Read(NALHeader, 0, 1);
-                                // NALHeaderInt = BitConverter.ToUInt16(NALHeader, 0);
-                                // SPSNalUnit.ForbiddenZeroBit = NALHeaderInt & 128;
-                                // SPSNalUnit.NalRefIdc = NALHeaderInt & 96;
-                                // SPSNalUnit.NalUnitType = NALHeaderInt & 31;
-
-                                // if (SPSNalUnit.NalUnitType == 14 || SPSNalUnit.NalUnitType == 20
-                                // || SPSNalUnit.NalUnitType == 21)
-                                // {
-                                //     if (SPSNalUnit.NalUnitType != 21)
-                                //     {
-                                //         SPSNalUnit.svc_extension_flag = memoryStream.read_bits(1) & 128;
-                                //     }
-                                //     else
-                                //     {
-                                //         SPSNalUnit.avc_3d_extension_flag = memoryStream.read_bits(1) & 128;
-                                //     }
-                                // }
-                                // SPSNalUnit.rbsp_byte = new byte[NalUnitLength - 1];
-                                // memoryStream.Read(SPSNalUnit.rbsp_byte, 0, SPSNalUnit.rbsp_byte.Length);
-                                // bitStream = new BitArray(SPSNalUnit.rbsp_byte);
-                                // H264._H264Extensions.BitsShift.Position = 0;
-
-                                // // for (int j = 1; j < NalUnitLength; j++)
-                                // // {
-                                // //     if (j + 2 < NalUnitLength - 1 && memoryStream.next_bits(24) == 0x000003)
-                                // //     {
-                                // //         SPSNalUnit.rbsp_byte[NumBytesInRBSP++] = (byte)(bitStream.read_bits(8));
-                                // //         SPSNalUnit.rbsp_byte[NumBytesInRBSP++] = (byte)(bitStream.read_bits(8));
-                                // //         j += 2;
-                                // //         SPSNalUnit.emulation_prevention_three_byte = bitStream.read_bits(24);
-                                // //     }
-                                // //     else
-                                // //     {
-                                // //         SPSNalUnit.rbsp_byte[NumBytesInRBSP++] = (byte)(bitStream.read_bits(8));
-                                // //     }
-                                // // }
-
-
-                                // PPS Pps = new PPS(Sps);
-                                // Pps.set_pps_values(bitStream);
+                                NalUnit = H264Parsers.nal_unit(NalUnitRBSP, NalUnitLength);
+                                if (NalUnit.NalUnitType == 8)
+                                {
+                                    SPS = SPS == null ? new SPS() : SPS;
+                                    PPS = H264Parsers.pic_parameter_set_rbsp(NalUnit.rbsp_byte, NalUnitLength, SPS);
+                                    aVCDecoderConfiguration.GetPPS = PPS;
+                                }
+                                Stsd.GetAVCDecoderConfiguration = aVCDecoderConfiguration;
                             }
                             break;
                     }
