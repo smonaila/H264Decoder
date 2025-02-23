@@ -6,17 +6,18 @@ using H264Utilities.Descriptors;
 using Decoder.H264ArrayParsers;
 using H264Utilities.Parsers;
 using h264.syntaxstructures;
+using H264.Global.Variables;
+using System.Text.Json;
+using H264.Types;
 
 namespace h264.utilities;
-
-
-
 public class HrdParameters
 {
     public HrdParameters()
     {
 
     }
+    
     public uint cpb_cnt_minus1 { get; set; }
     public uint bit_rate_scale { get; set; }
     public uint cpb_size_scale { get; set; }
@@ -108,6 +109,63 @@ public static partial class H264Utilities
         }
     }
 
+    private static void CreateSettingsFile(AVCDecoderConfigurationRecord aVCDecoderRecords)
+    {
+        try
+        {
+            if (!Directory.Exists(@"C:\H264Decoder\h264Service\Data\codecsetting.json"))
+            {
+                using (StreamWriter streamWriter = new StreamWriter(@"C:\H264Decoder\h264Service\Data\codecsetting.json"))
+                {
+                    SettingSets settingSets = new SettingSets();
+                    settingSets.GetPPS = aVCDecoderRecords.GetPPS;
+                    settingSets.GetSPS = aVCDecoderRecords.GetSPS;
+                    settingSets.GlobalVariables = new GlobalVariables();
+
+                    string jsonSettings = JsonSerializer.Serialize(settingSets);
+                    streamWriter.Write(jsonSettings);
+                }
+            }
+            else
+            {
+                string currentSetting = string.Empty;
+                using (StreamReader streamReader = new StreamReader(@"C:\H264Decoder\h264Service\Data\codecsetting.json"))
+                {
+                    SettingSets? settingSets = JsonSerializer.Deserialize<SettingSets>(streamReader.ReadToEnd());
+                    if (settingSets != null)
+                    {
+                        if (!settingSets.GetPPS.Equals(aVCDecoderRecords.GetPPS))
+                        {
+                            settingSets.GetPPS = aVCDecoderRecords.GetPPS;
+                        }
+
+                        if (!settingSets.GetSPS.Equals(aVCDecoderRecords.GetSPS))
+                        {
+                            settingSets.GetSPS = aVCDecoderRecords.GetSPS;
+                        }
+                        currentSetting = JsonSerializer.Serialize(settingSets);
+                    } else
+                    {
+                        settingSets = new SettingSets();
+                        settingSets.GetPPS = aVCDecoderRecords.GetPPS;
+                        settingSets.GetSPS = aVCDecoderRecords.GetSPS;
+                        settingSets.GlobalVariables = new GlobalVariables();
+                    }
+                }
+
+                using (StreamWriter streamWriter = new StreamWriter(@"C:\H264Decoder\h264Service\Data\codecsetting.json"))
+                {
+                    streamWriter.Write(currentSetting);
+                }
+            }
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+
     /// <summary>
     /// This method to grab the frame from the byte stream.
     /// </summary>
@@ -163,6 +221,9 @@ public static partial class H264Utilities
                 byte[] FrameBuffer = new byte[SizesList[FrameNumber - 1]];
                 fileStream.Read(FrameBuffer, 0, FrameBuffer.Length);
                 List<NALUnit> NalUnitsList = new List<NALUnit>();
+                H264Parsers h264Parsers = new H264Parsers();
+                AVCDecoderConfigurationRecord aVCDecoderRecords = sampleTable.Stsd.GetAVCDecoderConfiguration;
+                CreateSettingsFile(aVCDecoderRecords);
 
                 // Now we have the NAL Unit.
                 MemoryStream memoryStream = new MemoryStream(FrameBuffer);
@@ -186,12 +247,8 @@ public static partial class H264Utilities
                     if (NalUnit.NalUnitType == 1 || NalUnit.NalUnitType == 5)
                     {
                         BitList bitStream = new BitList(NalUnit.rbsp_byte);
-                        Stsd stsd = sampleTable != null ? sampleTable.Stsd : new Stsd();
-                        AVCDecoderConfigurationRecord aVCDecoderConfigurationRecord = stsd.GetAVCDecoderConfiguration;
-                        PPS? Pps = aVCDecoderConfigurationRecord != null ? aVCDecoderConfigurationRecord.GetPPS : new PPS();
-                        SPS? Sps = aVCDecoderConfigurationRecord != null ? aVCDecoderConfigurationRecord.GetSPS : new SPS();
-                        SliceHeader sliceHeader = H264Parsers.get_slice_header(bitStream, Sps, Pps, NalUnit);
-                        SliceData sliceData = H264Parsers.get_slice_data(bitStream, sliceHeader, Pps);
+                        SliceHeader sliceHeader = h264Parsers.get_slice_header(bitStream, NalUnit);
+                        SliceData sliceData = h264Parsers.get_slice_data(bitStream, sliceHeader);
                     }
                     NalUnitsList.Add(NalUnit);
                 }

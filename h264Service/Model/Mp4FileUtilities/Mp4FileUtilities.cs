@@ -716,13 +716,13 @@ public static class Mp4FileUtilities
                                 memoryStream.Read(NalUnitRBSP, 0, NalUnitRBSP.Length);
 
                                 NALUnit NalUnit = H264Parsers.nal_unit(NalUnitRBSP, NalUnitLength);
-                                
+                                H264Parsers h264Parsers = new H264Parsers();
                                 SPS? SPS = null;
                                 PPS? PPS = null;
 
                                 if ((NalUnit.NalUnitType & 31) == 7)
-                                {   
-                                    SPS = H264Parsers.seq_parameter_set_rbsp(NalUnit.rbsp_byte);
+                                {
+                                    SPS = h264Parsers.seq_parameter_set_rbsp(NalUnit.rbsp_byte);
                                     aVCDecoderConfiguration.GetSPS = SPS;
                                 }                                
 
@@ -740,8 +740,7 @@ public static class Mp4FileUtilities
                                 NalUnit = H264Parsers.nal_unit(NalUnitRBSP, NalUnitLength);
                                 if (NalUnit.NalUnitType == 8)
                                 {
-                                    SPS = SPS == null ? new SPS() : SPS;
-                                    PPS = H264Parsers.pic_parameter_set_rbsp(NalUnit.rbsp_byte, NalUnitLength, SPS);
+                                    PPS = h264Parsers.pic_parameter_set_rbsp(NalUnit.rbsp_byte);
                                     aVCDecoderConfiguration.GetPPS = PPS;
                                 }
                                 Stsd.GetAVCDecoderConfiguration = aVCDecoderConfiguration;

@@ -7,19 +7,34 @@ using H264Utilities.Descriptors;
 using static h264.NALUnits.SliceHeader;
 using H264.Global.Variables;
 using H264.Global.Methods;
+using H264.Types;
 
 namespace H264Utilities.Parsers;
 
-public static class H264Parsers
+public class H264Parsers
 {
+    private ICodecSettingsService settingsService;
+    public H264Parsers()
+    {
+        settingsService = new CodecSettings();
+    }
+    public H264Parsers(ICodecSettingsService codecSettingsService)
+    {
+        settingsService = codecSettingsService;
+    }
 
-    public static SliceHeader get_slice_header(BitList bitStream, SPS Sps, PPS Pps, NALUnit NalUnit)
+    public SliceHeader get_slice_header(BitList bitStream, NALUnit NalUnit)
     {
         try
         {
+            SettingSets codecSettings = settingsService.GetCodecSettings();
+            PPS Pps = codecSettings.GetPPS;
+            SPS Sps = codecSettings.GetSPS;
+            GlobalVariables globalVariables = codecSettings.GlobalVariables;
+
             SliceHeader sliceHeader = new SliceHeader(Sps, Pps, NalUnit);
-            // BitList bitStream = new BitList(sliceHeaderBytes);
-            bool IdrPicFlag = ((NalUnit.NalUnitType == 5) ? true : false);
+
+            bool IdrPicFlag = (NalUnit.NalUnitType == 5) ? true : false;
 
             sliceHeader.first_mb_in_slice = bitStream.ue();
             uint sliceType = bitStream.ue();
@@ -28,8 +43,8 @@ public static class H264Parsers
 
             if (Sps.separate_colour_plane == 1)
             {
-                sliceHeader.colour_plane_id = Convert.ToUInt32(bitStream.read_bits(2));    
-            }            
+                sliceHeader.colour_plane_id = Convert.ToUInt32(bitStream.read_bits(2));
+            }
             sliceHeader.frame_num = bitStream.u(Sps.log2_max_frame_num_minus4 + 4);
             if (!Sps.frame_mbs_only_flag)
             {
@@ -41,7 +56,7 @@ public static class H264Parsers
             }
             if (IdrPicFlag)
             {
-               sliceHeader.idr_pic_id = bitStream.ue(); 
+                sliceHeader.idr_pic_id = bitStream.ue();
             }
             if (Sps.pic_order_cnt_type == 0)
             {
@@ -123,10 +138,27 @@ public static class H264Parsers
             {
                 sliceHeader.slice_group_change_cycle = bitStream.ue();
             }
+            globalVariables.MbaffFrameFlag = ((Sps.mb_adaptive_frame_field_flag == 1) && (!(sliceHeader.field_pic_flag == true))) == true ? 1 : 0;
+            globalVariables.PicHeightInMbs = globalVariables.FrameHeightInMbs / (1 + (sliceHeader.field_pic_flag == true ? 1 : 0));
+            globalVariables.PicHeightInSamplesL = globalVariables.PicHeightInMbs * globalVariables.MbHeightC;
+            globalVariables.PicSizeInMbs = globalVariables.PicWidthInMbs * globalVariables.PicHeightInMbs;
+            globalVariables.MaxPicNum = !sliceHeader.field_pic_flag ? globalVariables.MaxFrameNum : 2 * globalVariables.MaxFrameNum;
+            globalVariables.CurrPicNum = !sliceHeader.field_pic_flag ? sliceHeader.frame_num : 2 * sliceHeader.frame_num;
+            globalVariables.SliceQPY = 26 + Pps.pic_init_qp_minus26 + sliceHeader.slice_qp_delta;
+            globalVariables.QSY = 26 + Pps.pic_init_qp_minus26 + sliceHeader.slice_qp_delta;
+            globalVariables.FilterOffsetA = sliceHeader.slice_alpha_c0_offset_div2 << 1;
+            globalVariables.FilterOffsetB = sliceHeader.slice_beta_offset_div2 << 1;
+            globalVariables.MapUnitsInSliceGroup0 = (int)Math.Min(sliceHeader.slice_group_change_cycle * globalVariables.SliceGroupChangeRate,
+            globalVariables.PicSizeInMapUnits);
+
+            codecSettings.GlobalVariables = globalVariables;
+            settingsService.Update<GlobalVariables>(globalVariables);
+            settingsService.Update<SliceHeader>(sliceHeader);
+
             return sliceHeader;
         }
         catch (System.Exception)
-        {            
+        {
             throw;
         }
     }
@@ -141,7 +173,8 @@ public static class H264Parsers
             {
                 decRefPicMarking.no_output_of_prior_pics_flags = bitStream.u(1) == 1;
                 decRefPicMarking.long_term_reference_flags = bitStream.u(1) == 1;
-            }else
+            }
+            else
             {
                 decRefPicMarking.adaptive_ref_pic_marking_mode_flags = bitStream.u(1) == 1;
                 if (decRefPicMarking.adaptive_ref_pic_marking_mode_flags)
@@ -149,7 +182,7 @@ public static class H264Parsers
                     do
                     {
                         decRefPicMarking.memory_management_control_operation = bitStream.ue();
-                        if (decRefPicMarking.memory_management_control_operation == 1 || 
+                        if (decRefPicMarking.memory_management_control_operation == 1 ||
                             decRefPicMarking.memory_management_control_operation == 3)
                         {
                             decRefPicMarking.different_of_pic_nums_minus1 = bitStream.ue();
@@ -158,7 +191,7 @@ public static class H264Parsers
                         {
                             decRefPicMarking.long_term_pic_num = bitStream.ue();
                         }
-                        if (decRefPicMarking.memory_management_control_operation == 3 || 
+                        if (decRefPicMarking.memory_management_control_operation == 3 ||
                             decRefPicMarking.memory_management_control_operation == 6)
                         {
                             decRefPicMarking.long_term_frame_idx = bitStream.ue();
@@ -175,14 +208,13 @@ public static class H264Parsers
         }
         catch (System.Exception)
         {
-            
             throw;
         }
     }
 
     public static void pred_weight_table(BitList bitStream)
     {
-        
+
     }
 
     public static RefPicListModification ref_pic_list_modification(BitList bitStream, SliceHeader sliceHeader)
@@ -194,14 +226,13 @@ public static class H264Parsers
         }
         catch (System.Exception)
         {
-            
             throw;
         }
     }
 
     public static void ref_pic_list_mvc_modification(BitList bitStream)
     {
-        
+
     }
 
     public static AccessUnitDelimiter access_unit_delimiter_rbsp(byte[] audBytes)
@@ -214,7 +245,7 @@ public static class H264Parsers
                 BitList bitStream = new BitList(audBytes);
                 unitDelimiter.primary_pic_type = Convert.ToUInt32(bitStream.read_bits(3), 2);
                 bitStream.rbsp_trailing_bits();
-    
+
                 return unitDelimiter;
             }
         }
@@ -254,7 +285,7 @@ public static class H264Parsers
                         // nal_unit_header_svc_extension();
                         NumBytesInRBSP += 3;
                     }
-                    else if(NALUnit.avc_3d_extension_flag == 1)
+                    else if (NALUnit.avc_3d_extension_flag == 1)
                     {
                         // nal_unit_header_3davc_extension();
                         nalUnitHeaderBytes += 2;
@@ -285,7 +316,6 @@ public static class H264Parsers
         }
         catch (System.Exception)
         {
-            
             throw;
         }
         return NALUnit;
@@ -340,12 +370,10 @@ public static class H264Parsers
                 }
             }
             vuiParameters.overscan_info_present_flag = bitStream.u(1) == 1;
-
             if (vuiParameters.overscan_info_present_flag)
             {
                 vuiParameters.overscan_appropriate_flag = bitStream.u(1) == 1;
             }
-            
             vuiParameters.video_signal_type_present_flag = bitStream.u(1) == 1;
             if (vuiParameters.video_signal_type_present_flag)
             {
@@ -360,7 +388,6 @@ public static class H264Parsers
                     vuiParameters.matrix_coefficients = bitStream.u(8);
                 }
             }
-            
             vuiParameters.chroma_loc_info_present_flag = bitStream.u(1) == 1;
             if (vuiParameters.chroma_loc_info_present_flag)
             {
@@ -370,10 +397,6 @@ public static class H264Parsers
             vuiParameters.timing_info_present_flag = bitStream.u(1) == 1;
             if (vuiParameters.timing_info_present_flag)
             {
-                string bits = bitStream.next_bits(32);
-                uint byteIndex = bitStream.Position / 8;
-
-                Console.WriteLine(@"{0}", bitStream.next_bits(32));
                 vuiParameters.num_units_in_stick = bitStream.u(32);
                 vuiParameters.time_scale = bitStream.u(32);
                 vuiParameters.fixed_frame_rate_flag = bitStream.u(1) == 1;
@@ -439,19 +462,23 @@ public static class H264Parsers
         }
     }
 
-    public static PPS pic_parameter_set_rbsp(byte[] ppsBytes, long NalUnitLength, SPS SPS)
+    public PPS pic_parameter_set_rbsp(byte[] ppsBytes)
     {
-        PPS PPSUnit = new PPS();
+        SettingSets? settingSets = settingsService.GetCodecSettings();
+        SPS SPS = settingSets.GetSPS;
+        PPS PPSUnit = settingSets.GetPPS;
+        GlobalVariables globalVariables = settingSets.GlobalVariables;
+
         try
         {
             using (MemoryStream memoryStream = new MemoryStream(ppsBytes))
-            {   
+            {
                 BitList bitStream = new BitList(ppsBytes);
 
                 PPSUnit.pic_parameter_set_id = bitStream.ue();
                 PPSUnit.seq_parameter_set_id = bitStream.ue();
-                PPSUnit.entropy_coding_mode_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;               
-                PPSUnit.bottom_field_pic_order_in_frame_present_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;                
+                PPSUnit.entropy_coding_mode_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
+                PPSUnit.bottom_field_pic_order_in_frame_present_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
                 PPSUnit.num_slice_groups_minus1 = bitStream.ue();
 
                 if (PPSUnit.num_slice_groups_minus1 > 0)
@@ -488,18 +515,18 @@ public static class H264Parsers
                         }
                     }
                 }
-                PPSUnit.num_ref_idx_l0_default_active_minus1 = bitStream.ue();                
+                PPSUnit.num_ref_idx_l0_default_active_minus1 = bitStream.ue();
                 PPSUnit.num_ref_idx_l1_default_active_minus1 = bitStream.ue();
                 PPSUnit.weighted_pred_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
                 PPSUnit.weighted_bipred_idc = Convert.ToUInt32(bitStream.read_bits(2), 2);
-            
+
                 PPSUnit.pic_init_qp_minus26 = bitStream.se();
                 PPSUnit.pic_init_qs_minus26 = bitStream.se();
                 PPSUnit.chroma_qp_index_offset = bitStream.se();
                 PPSUnit.deblocking_filter_control_present_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
                 PPSUnit.constrained_intra_pred_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
                 PPSUnit.redundant_pic_cnt_present_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
-    
+
                 if (bitStream.more_rbsp_data())
                 {
                     PPSUnit.transform_8x8_mode_flag = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
@@ -525,30 +552,34 @@ public static class H264Parsers
                         }
                     }
                     PPSUnit.second_chroma_qp_index_offset = bitStream.se();
-                    var PPSJson = new {
-                    pic_parameter_set_id = PPSUnit.pic_parameter_set_id,
-                    seq_parameter_set_id = PPSUnit.seq_parameter_set_id,
-                    entropy_coding_mode_flag = PPSUnit.entropy_coding_mode_flag,
-                    bottom_field_pic_order_in_frame_present_flag = PPSUnit.bottom_field_pic_order_in_frame_present_flag,
-                    num_slice_groups_minus1 = PPSUnit.num_slice_groups_minus1,
-                    num_ref_idx_l0_default_active_minus1 = PPSUnit.num_ref_idx_l0_default_active_minus1,
-                    num_ref_idx_l1_default_active_minus1 = PPSUnit.num_ref_idx_l1_default_active_minus1,
-                    weighted_pred_flag = PPSUnit.weighted_pred_flag,
-                    weighted_bipred_idc = PPSUnit.weighted_bipred_idc,
-                    pic_init_qp_minus26 = PPSUnit.pic_init_qp_minus26,
-                    pic_init_qs_minus26 = PPSUnit.pic_init_qs_minus26,
-                    chroma_qp_index_offset = PPSUnit.chroma_qp_index_offset,
-                    deblocking_filter_control_present_flag = PPSUnit.deblocking_filter_control_present_flag,
-                    constrained_intra_pred_flag = PPSUnit.constrained_intra_pred_flag,
-                    redundant_pic_cnt_present_flag = PPSUnit.redundant_pic_cnt_present_flag,
-                    transform_8x8_mode_flag = PPSUnit.transform_8x8_mode_flag,
-                    pic_scaling_matrix_present = PPSUnit.pic_scaling_matrix_present,
-                    second_chroma_qp_index_offset = PPSUnit.second_chroma_qp_index_offset
-                };
-                // Console.WriteLine("PPSJSON: {0}, Position: {1}", PPSJson.ToString(), bitStream.Position);
+
+                    var PPSJson = new
+                    {
+                        pic_parameter_set_id = PPSUnit.pic_parameter_set_id,
+                        seq_parameter_set_id = PPSUnit.seq_parameter_set_id,
+                        entropy_coding_mode_flag = PPSUnit.entropy_coding_mode_flag,
+                        bottom_field_pic_order_in_frame_present_flag = PPSUnit.bottom_field_pic_order_in_frame_present_flag,
+                        num_slice_groups_minus1 = PPSUnit.num_slice_groups_minus1,
+                        num_ref_idx_l0_default_active_minus1 = PPSUnit.num_ref_idx_l0_default_active_minus1,
+                        num_ref_idx_l1_default_active_minus1 = PPSUnit.num_ref_idx_l1_default_active_minus1,
+                        weighted_pred_flag = PPSUnit.weighted_pred_flag,
+                        weighted_bipred_idc = PPSUnit.weighted_bipred_idc,
+                        pic_init_qp_minus26 = PPSUnit.pic_init_qp_minus26,
+                        pic_init_qs_minus26 = PPSUnit.pic_init_qs_minus26,
+                        chroma_qp_index_offset = PPSUnit.chroma_qp_index_offset,
+                        deblocking_filter_control_present_flag = PPSUnit.deblocking_filter_control_present_flag,
+                        constrained_intra_pred_flag = PPSUnit.constrained_intra_pred_flag,
+                        redundant_pic_cnt_present_flag = PPSUnit.redundant_pic_cnt_present_flag,
+                        transform_8x8_mode_flag = PPSUnit.transform_8x8_mode_flag,
+                        pic_scaling_matrix_present = PPSUnit.pic_scaling_matrix_present,
+                        second_chroma_qp_index_offset = PPSUnit.second_chroma_qp_index_offset
+
+                    };
+                    // Console.WriteLine("PPSJSON: {0}, Position: {1}", PPSJson.ToString(), bitStream.Position);
                 }
                 // bitStream.rbsp_trailing_bits();
             }
+            settingsService.Update<PPS>(PPSUnit);
             return PPSUnit;
         }
         catch (System.Exception)
@@ -557,13 +588,15 @@ public static class H264Parsers
         }
     }
 
-    public static SPS seq_parameter_set_rbsp(byte[] spsBytes)
+    public SPS seq_parameter_set_rbsp(byte[] spsBytes)
     {
         using (MemoryStream memoryStream = new MemoryStream(spsBytes))
         {
             BitList bitStream = new BitList(spsBytes);
-            // Console.WriteLine(@"Size Start: {0}", bitStream.Length);
-            SPS Sps = new SPS();
+            SettingSets settingSets = settingsService.GetCodecSettings();
+            SPS Sps = settingSets.GetSPS;
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+
             Sps.profile_Idc = bitStream.u(8);
             uint constraint_value = bitStream.u(8);
 
@@ -575,9 +608,9 @@ public static class H264Parsers
             Sps.constraint_set5_flag = (constraint_value & 255) == 4;
             Sps.reserved_zero_2bits = constraint_value & 3;
 
-            Sps.level_idc = bitStream.u(8);  
+            Sps.level_idc = bitStream.u(8);
             Sps.seq_parameter_set_id = bitStream.ue();
-            
+
             if (Sps.profile_Idc == 100 || Sps.profile_Idc == 110 || Sps.profile_Idc == 122 ||
                 Sps.profile_Idc == 244 || Sps.profile_Idc == 44 || Sps.profile_Idc == 83 ||
                 Sps.profile_Idc == 86 || Sps.profile_Idc == 118 || Sps.profile_Idc == 138 ||
@@ -659,7 +692,7 @@ public static class H264Parsers
                 constraint_set5_flag = Sps.constraint_set5_flag,
                 level_idc = Sps.level_idc,
                 reserved_zero_2bits = Sps.reserved_zero_2bits,
-                seq_parameter_set_id =Sps.seq_parameter_set_id,
+                seq_parameter_set_id = Sps.seq_parameter_set_id,
                 log2_max_frame_num_minus4 = Sps.log2_max_frame_num_minus4,
                 pic_order_cnt_type = Sps.pic_order_cnt_type,
                 max_num_ref_frames = Sps.max_num_ref_frames,
@@ -675,25 +708,308 @@ public static class H264Parsers
                 fram_crop_bottom_offset = Sps.fram_crop_bottom_offset,
                 vui_parameters_present_flag = Sps.vui_parameters_present_flag
             };
-            // Console.WriteLine(@"JsonSPS: {0}", sps.ToString());
-
             if (Sps.vui_parameters_present_flag == 1)
             {
                 // Vui parameters.
                 VuiParameters vuiParameters = H264Parsers.vui_parameters(bitStream);
             }
-            // bitStream.rbsp_trailing_bits();
+            globalVariables.BitDepthY = 8 + Sps.bit_depth_luma_minus8;
+            globalVariables.QpBdOffsetY = 6 * Sps.bit_depth_luma_minus8;
+            globalVariables.BitDepthC = 8 + Sps.bit_depth_chroma_minus8;
+            globalVariables.QpBdOffsetC = 6 * Sps.bit_depth_chroma_minus8;
+            globalVariables.RawMbBits = 256 * globalVariables.BitDepthY + 2 * globalVariables.MbWidthC * globalVariables.MbHeightC * globalVariables.BitDepthC;
+            globalVariables.MaxFrameNum = (int)Math.Pow(2, Sps.log2_max_frame_num_minus4 + 4);
+            globalVariables.MaxPicOrderCntLsb = (int)Math.Pow(2, Sps.log2_max_pic_order_cnt_lsb_minus4 + 4);
+            globalVariables.PicWidthInSamplesC = globalVariables.PicWidthInMbs * globalVariables.MbWidthC;
+            int ExpectedDeltaPerPicOrderCntCycle = 0;
+            for (int i = 0; i < Sps.num_ref_frames_in_pic_order_cnt_cycle; i++)
+            {
+                ExpectedDeltaPerPicOrderCntCycle += (int)Sps.offset_for_ref_frames[i];
+            }
+            globalVariables.ExpectedDeltaPerPicOrderCntCycle = ExpectedDeltaPerPicOrderCntCycle;
+            globalVariables.PicWidthInMbs = (int)Sps.pic_width_in_mbs_minus1 + 1;
+            globalVariables.PicWidthInSamplesL = globalVariables.PicWidthInMbs * 16;
+            globalVariables.PicWidthInSamplesC = globalVariables.PicHeightInMbs * globalVariables.MbWidthC;
+            globalVariables.PicHeightInMapUnits = (int)Sps.pic_height_in_map_units_minus1 + 1;
+            globalVariables.PicSizeInMapUnits = globalVariables.PicWidthInMbs * globalVariables.PicHeightInMapUnits;
+            globalVariables.FrameHeightInMbs = (2 - (Sps.frame_mbs_only_flag ? 1 : 0)) * globalVariables.PicHeightInMapUnits;
+
+            if (!(Sps.separate_colour_plane == 1))
+            {
+                globalVariables.ChromaArrayType = (ushort)Sps.chroma_format_idc;
+            }else
+            {
+                globalVariables.ChromaArrayType = 0;
+            }
+            if (globalVariables.ChromaArrayType == 0)
+            {
+                globalVariables.CropUnitX = 1;
+                globalVariables.CropUnitY = 2 - (Sps.frame_mbs_only_flag ? 1 : 0);
+            }
+            else
+            {
+                globalVariables.CropUnitX = (int)globalVariables.SubWidthC;
+                globalVariables.CropUnitY = (int)globalVariables.SubHeightC * (2 - (Sps.frame_mbs_only_flag ? 1 : 0));
+            }
+            settingsService.Update<GlobalVariables>(globalVariables);
+            settingsService.Update<SPS>(Sps);
             return Sps;
         }
     }
 
-    public static SliceData get_slice_data(BitList bitStream, SliceHeader sliceHeader, PPS Pps)
+    public MacroblockLayer parse_macroblock_layer(BitList bitStream, SynElemSlice synElemSlice)
+    {
+        try
+        {
+            MacroblockLayer macroblockLayer = new MacroblockLayer();
+            MicroblockTypes macroblockTypes = new MicroblockTypes(settingsService, synElemSlice);
+
+            SettingSets settingSets = settingsService.GetCodecSettings();
+            PPS Pps = settingSets.GetPPS;
+            SPS Sps = settingSets.GetSPS;
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            SliceHeader sliceHeader = settingSets.SliceHeader;
+            Extras extras = settingSets.Extras;
+
+            MacroblockSlice macroblockSlice = new MacroblockSlice();
+            bool noSubMbPartSizeLessThan8x8Flag = true;
+
+            synElemSlice.settingSets = settingSets;
+
+            macroblockLayer.mb_type = Pps.entropy_coding_mode_flag ? (uint)bitStream.ae(synElemSlice) : bitStream.ue();
+            if (macroblockLayer.mb_type == (uint)MicroblockType.I_PCM)
+            {
+                while (!bitStream.byte_aligned())
+                {
+
+                }
+                for (int i = 0; i < 256; i++)
+                {
+                    macroblockLayer.pcm_sample_luma[i] = (uint)i;
+                }
+            }
+            else
+            {
+                noSubMbPartSizeLessThan8x8Flag = true;
+                if (macroblockLayer.mb_type != (uint)MicroblockType.I_NxN &&
+                macroblockTypes.MbPartPredMode(macroblockLayer.mb_type, 0) != PredictionModes.Intra_16x16 &&
+                macroblockTypes.NumMbPart(macroblockLayer.mb_type) == NumMbPartModes.Four)
+                {
+                    SubMbPredLayer subMbPredLayer = new SubMbPredLayer(macroblockLayer.mb_type).GetSubMbPredLayer();
+                    SliceSubMacroblock BSliceSubMB = macroblockSlice.BSubMacroblock.First(b => b.SubMacroblockName == "B_Direct_8x8");
+                    for (int mbPartIdx = 0; mbPartIdx < 4; mbPartIdx++)
+                    {
+                        if (subMbPredLayer.sub_mb_type[mbPartIdx] != BSliceSubMB.SubMbType)
+                        {
+                            if ((int)macroblockTypes.NumSubMbPart(subMbPredLayer.sub_mb_type[mbPartIdx]) > 1)
+                            {
+                                noSubMbPartSizeLessThan8x8Flag = false;
+                            }
+                        }
+                        else if (!(Sps.direct_8x8_inference_flag == 1))
+                        {
+                            noSubMbPartSizeLessThan8x8Flag = false;
+                        }
+                    }
+                }
+                else
+                {
+                    if (Pps.transform_8x8_mode_flag && (macroblockLayer.mb_type == (uint)MicroblockType.I_NxN))
+                    {
+                        // Read transform_8x8_mode_flag from the stream.
+                        macroblockLayer.transform_size_8x8_flag = Pps.entropy_coding_mode_flag ? bitStream.u(1) == 1 : bitStream.ae(synElemSlice) == 1;
+                    }       
+                    extras.MacroblockLayer = macroblockLayer;
+                    settingsService.Update(extras);
+                    parse_mb_pred(bitStream, macroblockLayer.mb_type, synElemSlice);
+                }
+                if (macroblockTypes.MbPartPredMode(macroblockLayer.mb_type, 0) != PredictionModes.Intra_16x16)
+                {
+                    // Read the value of coded_block_pattern from the stream.
+                    macroblockLayer.coded_block_pattern = bitStream.me();
+                    List<I_SliceMicroblock> IsliceMacroblocks = macroblockTypes.ISliceTypeTable;
+                    PredictionModes currentMacroblock = macroblockTypes.MbPartPredMode(macroblockLayer.mb_type, 0);
+                    var bsliceMacroblock = (from bslicemb in IsliceMacroblocks
+                                            where bslicemb.MbType == macroblockLayer.mb_type &&
+                                            macroblockTypes.MbPartPredMode(macroblockLayer.mb_type, 0) == currentMacroblock
+                                            select bslicemb).FirstOrDefault();
+                    bsliceMacroblock = bsliceMacroblock != null ? bsliceMacroblock : new I_SliceMicroblock();
+                    NumMbPartions? predictionPart = (from pp in bsliceMacroblock.NumMbPartions
+                                                     where pp.NumberOfPart == 0
+                                                     select pp).FirstOrDefault();
+                    predictionPart = predictionPart != null ? predictionPart : new NumMbPartions();
+                    PredictionModes predictionModes = predictionPart.PredictionModes;
+                    
+                    bsliceMacroblock.CodedBlockPatternLuma = (CodedBlockPatterLumaValue)(macroblockLayer.coded_block_pattern % 16);
+                    bsliceMacroblock.CodedBlockPatternChroma = (CodedBlockPatternChromaValue)(macroblockLayer.coded_block_pattern / 16);
+                    
+                    globalVariables.CodedBlockPatternLuma = (ushort)bsliceMacroblock.CodedBlockPatternLuma;
+                    globalVariables.CodedBlockPatternChroma = (ushort)bsliceMacroblock.CodedBlockPatternChroma;
+                    settingsService.Update(globalVariables);
+
+                    if (globalVariables.CodedBlockPatternLuma > 0 &&
+                    Pps.transform_8x8_mode_flag &&
+                    noSubMbPartSizeLessThan8x8Flag &&
+                    (predictionModes != PredictionModes.Intra_16x16))
+                    {
+                        // Read coded_block_pattern from the stream.
+                        if (globalVariables.CodedBlockPatternLuma > 0 &&
+                        Pps.transform_8x8_mode_flag &&
+                        bsliceMacroblock.NameOfMb != "I_NxN" &&
+                        (bsliceMacroblock.NameOfMb != "B_Direct_16x16" || (Sps.direct_8x8_inference_flag == 1)))
+                        {
+                            // Read transform_size_8x8_flag from the stream.
+                        }
+                    }
+                    if (globalVariables.CodedBlockPatternLuma > 0 || globalVariables.CodedBlockPatternChroma > 0
+                    || macroblockTypes.MbPartPredMode(macroblockLayer.mb_type, 0) == PredictionModes.Intra_16x16)
+                    {
+                        // Read the mb_qp_delta
+                        macroblockLayer.mb_qp_delta = Pps.entropy_coding_mode_flag ? (uint)bitStream.ae() : (uint)bitStream.se();
+                        extras.MacroblockLayer = macroblockLayer;
+                        settingsService.Update(extras);
+                        parse_residual(0, 15);
+                        
+                        // Residual(0, 15);
+                    }
+                }                
+            }
+            return macroblockLayer;
+        }
+        catch (System.Exception)
+        {
+            throw;
+        }
+    }
+
+    public Residual parse_residual(int startIdx, int endIdx)
+    {
+        try
+        {
+            SettingSets settingSets = settingsService.GetCodecSettings();
+            ICoefficients ResidualBlock;
+            PPS Pps = settingSets.GetPPS;
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            SPS Sps = settingSets.GetSPS;
+            ResidualLuma residualLuma;
+            Residual residual = new Residual();
+
+            int[] I16x16DCLevel = new int[16];
+            int[,] I16x16ACLevel = new int[16, 15];
+            int[,] Level4x4 = new int[16, 16];
+            int[,] Level8x8 = new int[4, 16];
+
+            if (!Pps.entropy_coding_mode_flag)
+            {
+                ResidualBlockCAVLC residualBlockCAVLC = new ResidualBlockCAVLC();
+                ResidualBlock = residualBlockCAVLC;
+                residualLuma = new ResidualLuma(residualBlockCAVLC, settingsService);                
+            } else
+            {
+                ResidualBlockCabac residualBlockCabac = new ResidualBlockCabac();
+                ResidualBlock = residualBlockCabac;
+                residualLuma = new ResidualLuma(residualBlockCabac, settingsService);                
+            }
+            residualLuma.GetResidualLuma(out I16x16DCLevel, out I16x16ACLevel, out Level4x4, out Level8x8, startIdx, endIdx);
+            residual.Intra16x16DCLevel = I16x16DCLevel;
+            residual.Intra16x16ACLevel = I16x16ACLevel;
+            residual.LumaLevel4x4 = Level4x4;
+            residual.LumaLevel8x8 = Level8x8;
+
+            using (StreamReader streamReader = new StreamReader(@"Data\SliceMicroblockTables.json"))
+           {
+                string jsonChromaString = streamReader.ReadToEnd();
+                List<ChromaFormat>? chromaFormats = JsonSerializer.Deserialize<List<ChromaFormat>>(jsonChromaString);
+                ChromaFormat? chromaFormat = (from cf in chromaFormats
+                                            where (uint)cf.ChromaFormatIdc == Sps.chroma_format_idc &&
+                                            cf.SeparateColorPlaneFlag == Sps.separate_colour_plane
+                                            select cf).FirstOrDefault();
+                chromaFormat = chromaFormat != null ? chromaFormat : new ChromaFormat();
+                globalVariables.NumC8x8 = (int)(4 / ((uint)chromaFormat.SubWidthC * (uint)chromaFormat.SubHeightC));
+
+                if (globalVariables.ChromaArrayType == 1 || globalVariables.ChromaArrayType == 2)
+                {                    
+                    residual.ChromaDCLevel = new int[2, 4 * globalVariables.NumC8x8];
+                    residual.ChromaACLevel = new int[2, globalVariables.NumC8x8, 15];
+
+                    for (int iCbCr = 0; iCbCr < 2; iCbCr++)
+                    {                                                
+                        if ((globalVariables.CodedBlockPatternChroma & 3) > 0 && (startIdx == 0))
+                        {
+                            /* Chroma DC residual present */
+                            int[] tempCoefficients = new int[4 * globalVariables.NumC8x8];
+                            int[] coefficients = ResidualBlock.GetCoefficients(tempCoefficients, 0, 
+                            4 * globalVariables.NumC8x8 - 1, 4 * globalVariables.NumC8x8);
+                            residual.ChromaDCLevel = h264Array.Copy2DArray(residual.ChromaDCLevel, iCbCr, coefficients, 0, coefficients.Length);                            
+                        }
+                        else
+                        {
+                            for (int i = 0; i < 4 * globalVariables.NumC8x8; i++)
+                            {
+                                residual.ChromaDCLevel[iCbCr, i] = 0;
+                            }
+                        }
+                    }
+
+                    for (int iCbCr = 0; iCbCr < 2; iCbCr++)
+                    {
+                        for (int i8x8 = 0; i8x8 < globalVariables.NumC8x8; i8x8++)
+                        {
+                            for (int i4x4 = 0; i4x4 < 4; i4x4++)
+                            {
+                                if ((globalVariables.CodedBlockPatternChroma & 2) > 0)
+                                {
+                                    /* Chroma AC residual present */
+                                    int[] tempCoefficient = new int[15];
+                                    int[] coefficients = ResidualBlock.GetCoefficients(tempCoefficient, 
+                                    Math.Max(0, startIdx - 1), endIdx - 1, 15);
+                                    residual.ChromaACLevel = h264Array.Copy3DArray(residual.ChromaACLevel, iCbCr, i8x8, coefficients, 0, coefficients.Length);
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < 15; i++)
+                                    {
+                                        residual.ChromaACLevel[iCbCr, i8x8 * 4 + i4x4, i] = 0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (globalVariables.ChromaArrayType == 3  )
+                {
+                    residualLuma.GetResidualLuma(out I16x16DCLevel, out I16x16ACLevel, out Level4x4, out Level8x8, startIdx, endIdx);
+                    residual.CbIntra16x16DCLevel = I16x16DCLevel;
+                    residual.CbIntra16x16ACLevel = I16x16ACLevel;
+                    residual.CbLevel4x4 = Level4x4;
+                    residual.CbLevel8x8 = Level8x8;
+
+                    residualLuma.GetResidualLuma(out I16x16DCLevel, out I16x16ACLevel, out Level4x4, out Level8x8, startIdx, endIdx);
+                    residual.CrIntra16x16DCLevel = I16x16DCLevel;
+                    residual.CrIntra16x16ACLevel = I16x16ACLevel;
+                    residual.CrLevel4x4 = Level4x4;
+                    residual.CrLevel8x8 = Level8x8;
+                }                
+           }
+            return residual;
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    public SliceData get_slice_data(BitList bitStream, SliceHeader sliceHeader)
     {
         try
         {
             SliceData sliceData = new SliceData();
-            GlobalVariables globalVariables = new GlobalVariables();
-            GlobalFunctions globalFunctions = new GlobalFunctions();
+            SettingSets codecSettings = settingsService.GetCodecSettings();
+            GlobalVariables globalVariables = codecSettings.GlobalVariables;
+
+            GlobalFunctions globalFunctions = new GlobalFunctions(settingsService, sliceHeader);
+
+            PPS Pps = codecSettings.GetPPS;
 
             bool moreDataFlag = true;
             bool prevMbSkipped = false;
@@ -705,7 +1021,8 @@ public static class H264Parsers
                 }
             }
             globalVariables.CurrMbAddr = (int)sliceHeader.first_mb_in_slice * (1 + globalVariables.MbaffFrameFlag);
-
+            SynElemSlice synElemSlice = new SynElemSlice();
+            synElemSlice.Slicetype = sliceHeader.slice_type;
             do
             {
                 if (sliceHeader.slice_type != Slicetype.I && sliceHeader.slice_type != Slicetype.SI)
@@ -718,14 +1035,131 @@ public static class H264Parsers
                         {
                             globalVariables.CurrMbAddr = globalFunctions.NextMbAddress(globalVariables.CurrMbAddr);
                         }
+                        if (sliceData.mb_skip_run > 0)
+                        {
+                            moreDataFlag = bitStream.more_rbsp_data();
+                        }
+                    }
+                    else
+                    {
+                        synElemSlice.SynElement = SynElement.mb_skip_flag;
+                        sliceData.mb_skip_flag = bitStream.ae(synElemSlice) == 1;
+                        moreDataFlag = !sliceData.mb_skip_flag;
                     }
                 }
-            } while (true);
-
+                if (moreDataFlag)
+                {
+                    if (globalVariables.MbaffFrameFlag == 1 && (globalVariables.CurrMbAddr % 2 == 0 ||
+                    (globalVariables.CurrMbAddr % 2 == 1 && prevMbSkipped)))
+                    {
+                        sliceData.mb_field_decoding_flag = Pps.entropy_coding_mode_flag ? bitStream.ae() == 1 : bitStream.u(1) == 1;
+                    }
+                    settingsService.Update<SliceData>(sliceData);
+                    parse_macroblock_layer(bitStream, synElemSlice);
+                }
+                if (!Pps.entropy_coding_mode_flag)
+                {
+                    moreDataFlag = bitStream.more_rbsp_data();
+                }
+                else
+                {
+                    if (sliceHeader.slice_type != Slicetype.I && sliceHeader.slice_type != Slicetype.SI)
+                    {
+                        prevMbSkipped = sliceData.mb_skip_flag;
+                    }
+                    if (globalVariables.MbaffFrameFlag == 1 && globalVariables.CurrMbAddr % 2 == 0)
+                    {
+                        moreDataFlag = true;
+                    }
+                    else
+                    {
+                        sliceData.end_of_slice_flag = bitStream.ae() == 1;
+                        moreDataFlag = !sliceData.end_of_slice_flag;
+                    }
+                }
+                globalVariables.CurrMbAddr = globalFunctions.NextMbAddress(globalVariables.CurrMbAddr);
+            } while (moreDataFlag);
+            settingsService.Update<GlobalVariables>(globalVariables);
             return sliceData;
         }
         catch (System.Exception)
-        {  
+        {
+            throw;
+        }
+    }
+
+    public MbPred parse_mb_pred(BitList bitStream, uint mb_type, SynElemSlice synElemSlice)
+    {
+        try
+        {
+            MicroblockTypes macroblockTypes = new MicroblockTypes(settingsService, synElemSlice);
+            SettingSets settingSets = settingsService.GetCodecSettings();
+            PPS Pps = settingSets.GetPPS;
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            SliceHeader sliceHeader = settingSets.SliceHeader;
+            SliceData sliceData = settingSets.SliceData;           
+
+            MbPred MbPred = new MbPred();
+
+            if (macroblockTypes.MbPartPredMode(mb_type, 0) == PredictionModes.Intra_4x4 ||
+                macroblockTypes.MbPartPredMode(mb_type, 0) == PredictionModes.Intra_8x8 ||
+                macroblockTypes.MbPartPredMode(mb_type, 0) == PredictionModes.Intra_16x16)
+            {
+                if (macroblockTypes.MbPartPredMode(mb_type, 0) == PredictionModes.Intra_4x4)
+                {
+                    MbPred.rem_intra4x4_pred_mode = new List<int>();
+                    for (int luma4x4BlkIdx = 0; luma4x4BlkIdx < 16; luma4x4BlkIdx++)
+                    {
+                        MbPred.prev_intra4x4_pred_mode_flag[luma4x4BlkIdx] =  Pps.entropy_coding_mode_flag ? bitStream.ae() == 1: bitStream.u(1) == 1;
+                        if (!MbPred.prev_intra4x4_pred_mode_flag[luma4x4BlkIdx])
+                        {
+                            MbPred.rem_intra4x4_pred_mode.Add(Pps.entropy_coding_mode_flag ? bitStream.ae(): (int)bitStream.u(3));
+                        }
+                    }
+                    if (globalVariables.ChromaArrayType == 1 || globalVariables.ChromaArrayType == 2)
+                    {
+                        MbPred.intra_chroma_pred_mode = Pps.entropy_coding_mode_flag ? bitStream.ae() : (int)bitStream.ue();
+                    }
+                }
+            } else if (macroblockTypes.MbPartPredMode(mb_type, 0) != PredictionModes.Direct)
+            {
+                for (int mbPartIdx = 0; mbPartIdx < (int)macroblockTypes.NumMbPart(mb_type); mbPartIdx++)
+                {
+                    if ((sliceHeader.num_ref_idx_l0_active_minus1 > 0)
+                        || sliceData.mb_field_decoding_flag != sliceHeader.field_pic_flag
+                        && macroblockTypes.MbPartPredMode(mb_type, (uint)mbPartIdx) != PredictionModes.Pred_L0)
+                    {
+                        int maxRangeX = globalVariables.MbaffFrameFlag == 1 || !sliceData.mb_field_decoding_flag ? (int)sliceHeader.num_ref_idx_l0_active_minus1 : (int)(2 * sliceHeader.num_ref_idx_l0_active_minus1 + 1);
+                        MbPred.ref_idx_l0[mbPartIdx] = Pps.entropy_coding_mode_flag ? bitStream.ae() : bitStream.te(maxRangeX);
+                    }
+                }
+                MbPred.mvd_l0 = new int[(int)macroblockTypes.NumMbPart(mb_type), 1, 2];
+                for (int mbPartIdx = 0; mbPartIdx < (int)macroblockTypes.NumMbPart(mb_type); mbPartIdx++)
+                {
+                    if (macroblockTypes.MbPartPredMode(mb_type, (uint)mbPartIdx) != PredictionModes.Pred_L1)
+                    {                       
+                        for (int compIdx = 0; compIdx < 2; compIdx++)
+                        {
+                            MbPred.mvd_l0[mbPartIdx, 0, compIdx] = Pps.entropy_coding_mode_flag ? bitStream.ae() : bitStream.se();
+                        }
+                    }
+                }
+                MbPred.mvd_l1 = new int[(int)macroblockTypes.NumMbPart(mb_type), 1, 2];
+                for (int mbPartIdx = 0; mbPartIdx < (int)macroblockTypes.NumMbPart(mb_type); mbPartIdx++)
+                {
+                    if (macroblockTypes.MbPartPredMode(mb_type, (uint)mbPartIdx) != PredictionModes.Pred_L0)
+                    {
+                        for (int compIdx = 0; compIdx < 2; compIdx++)
+                        {
+                            MbPred.mvd_l1[mbPartIdx, 0, compIdx] = Pps.entropy_coding_mode_flag ? bitStream.ae() : bitStream.se();
+                        }
+                    }
+                }
+            }
+            return MbPred;
+        }
+        catch (System.Exception)
+        {
             throw;
         }
     }

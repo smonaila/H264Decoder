@@ -1,6 +1,4 @@
-using System.Collections;
 using Decoder.H264ArrayParsers;
-using h264.utilities;
 using H264Utilities.Descriptors;
 namespace h264.NALUnits;
 
@@ -72,7 +70,6 @@ public partial class SliceHeader
     public bool num_ref_idx_active_override_flag { get; set; }
     public uint num_ref_idx_l0_active_minus1 { get; set; }
     public uint num_ref_idx_l1_active_minus1 { get; set; }
-
     public uint cabac_init_idc { get; set; }
     public int slice_qp_delta { get; set; }
     public int slice_qs_delta { get; set; }
@@ -88,7 +85,6 @@ public class SPS : NALUnit
     {
 
     }
-
     public uint profile_Idc { get; set; }
     public bool constraint_set0_flag { get; set; }
     public bool constraint_set1_flag { get; set; }
@@ -100,8 +96,7 @@ public class SPS : NALUnit
     public uint reserved_zero_2bits { get; set; }
     public uint level_idc { get; set; }
     public uint seq_parameter_set_id { get; set; }
-
-    public uint chroma_format_idc { get; set; }
+    public uint chroma_format_idc { get; set; } = 1;
     public uint separate_colour_plane { get; set; }
     public uint bit_depth_luma_minus8 { get; set; }
     public uint bit_depth_chroma_minus8 { get; set; }
@@ -111,13 +106,11 @@ public class SPS : NALUnit
     public uint log2_max_frame_num_minus4 { get; set; }
     public uint pic_order_cnt_type { get; set; }
     public uint log2_max_pic_order_cnt_lsb_minus4 { get; set; }
-
     public bool delta_pic_order_always_zero_flag { get; set; }
     public uint offset_for_non_ref_pic { get; set; }
     public uint offset_for_top_to_bottom_field { get; set; }
     public uint num_ref_frames_in_pic_order_cnt_cycle { get; set; }
     public uint[] offset_for_ref_frames { get; set; } = default!;
-
     public uint max_num_ref_frames { get; set; }
     public uint gaps_in_frame_num_value_allowed_flag { get; set; }
     public uint pic_width_in_mbs_minus1 { get; set; }
@@ -130,9 +123,7 @@ public class SPS : NALUnit
     public uint frame_crop_right_offset { get; set; }
     public uint frame_crop_top_offset { get; set; }
     public uint fram_crop_bottom_offset { get; set; }
-
     public uint vui_parameters_present_flag { get; set; }
-
     public List<int[]> scaling_list4x4 { get; set; } = new List<int[]>();
     public List<int[]> scaling_list8x8 { get; set; } = new List<int[]>();
     public Dictionary<int, bool> UseDefaultScaling4x4Flag { get; set; } = new Dictionary<int, bool>();
