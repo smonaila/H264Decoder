@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "Lszg7y8Vgnk=",
+  "dgSpecHash": "Tsot7BqkNSQ=",
   "success": true,
-  "projectFilePath": "c:\\H264Decoder\\h264Service\\h264Service.csproj",
+  "projectFilePath": "C:\\H264Decoder\\h264Service\\h264Service.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\smona\\.nuget\\packages\\microsoft.netcore.platforms\\1.1.0\\microsoft.netcore.platforms.1.1.0.nupkg.sha512",
     "C:\\Users\\smona\\.nuget\\packages\\microsoft.netcore.targets\\1.1.0\\microsoft.netcore.targets.1.1.0.nupkg.sha512",

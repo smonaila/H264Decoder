@@ -8,6 +8,7 @@ using static h264.NALUnits.SliceHeader;
 using H264.Global.Variables;
 using H264.Global.Methods;
 using H264.Types;
+using System.IO.Compression;
 
 namespace H264Utilities.Parsers;
 
@@ -868,7 +869,7 @@ public class H264Parsers
                         macroblockLayer.mb_qp_delta = Pps.entropy_coding_mode_flag ? (uint)bitStream.ae() : (uint)bitStream.se();
                         extras.MacroblockLayer = macroblockLayer;
                         settingsService.Update(extras);
-                        parse_residual(0, 15);
+                        parse_residual(bitStream, 0, 15);
                         
                         // Residual(0, 15);
                     }
@@ -882,7 +883,7 @@ public class H264Parsers
         }
     }
 
-    public Residual parse_residual(int startIdx, int endIdx)
+    public Residual parse_residual(BitList bitStream, int startIdx, int endIdx)
     {
         try
         {
@@ -901,12 +902,12 @@ public class H264Parsers
 
             if (!Pps.entropy_coding_mode_flag)
             {
-                ResidualBlockCAVLC residualBlockCAVLC = new ResidualBlockCAVLC();
+                ResidualBlockCAVLC residualBlockCAVLC = new ResidualBlockCAVLC(bitStream);
                 ResidualBlock = residualBlockCAVLC;
                 residualLuma = new ResidualLuma(residualBlockCAVLC, settingsService);                
             } else
             {
-                ResidualBlockCabac residualBlockCabac = new ResidualBlockCabac();
+                ResidualBlockCabac residualBlockCabac = new ResidualBlockCabac(bitStream);
                 ResidualBlock = residualBlockCabac;
                 residualLuma = new ResidualLuma(residualBlockCabac, settingsService);                
             }
