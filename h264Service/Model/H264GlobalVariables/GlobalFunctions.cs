@@ -1,5 +1,7 @@
 
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using h264.NALUnits;
 using H264.Global.Variables;
 using H264.Types;
@@ -12,6 +14,16 @@ public class GlobalFunctions
     private PPS Pps;
     private SPS Sps;
     private GlobalVariables GlobalVariables;
+
+    public GlobalFunctions()
+    {
+        settingsService = new CodecSettings();
+        SliceHeader = new SliceHeader();
+        Pps = new PPS();
+        Sps = new SPS();
+        GlobalVariables = new GlobalVariables();
+    }
+
     public GlobalFunctions(ICodecSettingsService service, SliceHeader SliceHeader)
     {
         settingsService = service;
@@ -21,6 +33,26 @@ public class GlobalFunctions
         this.Sps = codecSettings.GetSPS;
         this.SliceHeader = SliceHeader;
     }
+
+     public CAVLCSettings GetCAVLCSettings()
+    {
+        try
+        {
+            using (StreamReader streamReader = new StreamReader(@"C:\H264Decoder\h264Service\Data\currmbsettings.json"))
+            {
+                CAVLCSettings? CavlcSettings = JsonSerializer.Deserialize<CAVLCSettings>(streamReader.ReadToEnd());
+                CavlcSettings = CavlcSettings != null ? CavlcSettings : new CAVLCSettings();
+                
+                return CavlcSettings;
+            }
+        }
+        catch (System.Exception)
+        {
+            
+            throw;
+        }
+    }
+
     public int NextMbAddress(int CurrMbAddr)
     {
         int[] mapUnitToSliceGroupMap = new int[GlobalVariables.PicSizeInMbs - 1];
@@ -142,26 +174,26 @@ public class GlobalFunctions
             GlobalVariables globalVariables = new GlobalVariables();
            if (Pps.num_slice_groups_minus1 != 0 && Pps.slice_group_map_type == 2)
            {
-             for (int i = 0; i < globalVariables.PicSizeInMapUnits; i++)
-             {
-                 mapUnitToSliceGroupMap[i] = (int)Pps.num_slice_groups_minus1;
-                 for (int iGroup = (int)Pps.num_slice_groups_minus1 - 1; iGroup >= 0; iGroup--)
-                 {
-                     var yTopLeft = (int)Pps.top_left[iGroup] / globalVariables.PicWidthInMbs;
-                     var xTopLeft = (int)Pps.top_left[iGroup] % globalVariables.PicWidthInMbs;
-                     var yBottomRight = (int)Pps.bottom_right[iGroup] / globalVariables.PicWidthInMbs;
-                     var xBottomRight = (int)Pps.bottom_right[iGroup] % globalVariables.PicWidthInMbs;
- 
-                     for (int y = yTopLeft; y <= yBottomRight; y++)
-                     {
-                         for (int x = xTopLeft; x <= xBottomRight; xBottomRight++)
-                         {
-                             mapUnitToSliceGroupMap[y * globalVariables.PicWidthInMbs + x] = iGroup;
-                         }
-                     }
-                 }
-             }
-           }
+                for (int i = 0; i < globalVariables.PicSizeInMapUnits; i++)
+                {
+                    mapUnitToSliceGroupMap[i] = (int)Pps.num_slice_groups_minus1;
+                    for (int iGroup = (int)Pps.num_slice_groups_minus1 - 1; iGroup >= 0; iGroup--)
+                    {
+                        var yTopLeft = (int)Pps.top_left[iGroup] / globalVariables.PicWidthInMbs;
+                        var xTopLeft = (int)Pps.top_left[iGroup] % globalVariables.PicWidthInMbs;
+                        var yBottomRight = (int)Pps.bottom_right[iGroup] / globalVariables.PicWidthInMbs;
+                        var xBottomRight = (int)Pps.bottom_right[iGroup] % globalVariables.PicWidthInMbs;
+
+                        for (int y = yTopLeft; y <= yBottomRight; y++)
+                        {
+                            for (int x = xTopLeft; x <= xBottomRight; xBottomRight++)
+                            {
+                                mapUnitToSliceGroupMap[y * globalVariables.PicWidthInMbs + x] = iGroup;
+                            }
+                        }
+                    }
+                }
+            }
             return mapUnitToSliceGroupMap;
         }
         catch (System.Exception)
@@ -199,22 +231,22 @@ public class GlobalFunctions
                         leftBound = Math.Max(leftBound - 1, 0);
                         x = leftBound;
                         (xDir, yDir) = (0, 2 *  - short_flagVal - 1);
-                    }else if (xDir == 1 && x == rightBound)
+                    } else if (xDir == 1 && x == rightBound)
                     {
                         rightBound = Math.Min(rightBound + 1, globalVariables.PicWidthInMbs - 1);
                         x = rightBound;
                         (xDir, yDir) = (0, 1 - 2 * short_flagVal);
-                    }else if (yDir == -1 && y == topBound)
+                    } else if (yDir == -1 && y == topBound)
                     {
                         topBound = Math.Max(topBound - 1, 0);
                         y = topBound;
                         (xDir, yDir) = (1 - 2 * short_flagVal, 0);
-                    }else if (yDir == 1 && y == bottomBound)
+                    } else if (yDir == 1 && y == bottomBound)
                     {
                         bottomBound = Math.Min(bottomBound + 1, globalVariables.PicHeightInMapUnits - 1);
                         y = bottomBound;
                         (xDir, yDir) = (2 * short_flagVal - 1, 0);
-                    }else
+                    } else
                     {
                         (x, y) = (x + xDir, y + yDir);
                     }
@@ -237,8 +269,8 @@ public class GlobalFunctions
             int sizeOfUpperLeftGroup = 0;
             if (Pps.num_slice_groups_minus1 == 1 && (Pps.slice_group_map_type == 4 || Pps.slice_group_map_type == 5))
             {
-                sizeOfUpperLeftGroup = (Pps.slice_group_change_direction_flag ? globalVariables.PicSizeInMapUnits - globalVariables.MapUnitsInSliceGroup0 
-                                        : globalVariables.MapUnitsInSliceGroup0);
+                sizeOfUpperLeftGroup = Pps.slice_group_change_direction_flag ? globalVariables.PicSizeInMapUnits - globalVariables.MapUnitsInSliceGroup0 
+                                        : globalVariables.MapUnitsInSliceGroup0;
             }
             
             if (Pps.num_slice_groups_minus1 == 0)
@@ -249,6 +281,22 @@ public class GlobalFunctions
                 }
             }
             return mapUnitToSliceGroupMap;
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    public void SetCoeffLevelType(CAVLCSettings cAVLCSettings)
+    {
+        try
+        {
+            using (StreamWriter streamWriter = new StreamWriter(@"C:\H264Decoder\h264Service\Data\currmbsettings.json"))
+            {
+                string calvlcSettingsjson = JsonSerializer.Serialize<CAVLCSettings>(cAVLCSettings); 
+                streamWriter.WriteLine(calvlcSettingsjson);
+            }
         }
         catch (System.Exception)
         {            

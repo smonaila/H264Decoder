@@ -97,7 +97,7 @@
         "emulation_prevention_three_byte": 0
     },
     "gvar": {
-        "coded_block_pattern_luma": 0,
+        "coded_block_pattern_luma": 15,
         "coded_block_pattern_chroma": 0,
         "chroma_array_type": 0,
         "numc8x8": 0,
@@ -432,8 +432,24 @@
             ],
             "pcm_sample_chroma": [],
             "transform_size_8x8_flag": false,
-            "coded_block_pattern": 0,
-            "mb_qp_delta": 0
-        }
+            "coded_block_pattern": 15,
+            "mb_qp_delta": 16
+        },
+        "mb_list": [
+            {
+                "Address": 0,
+                "SliceType": 2,
+                "FrameNum": 0,
+                "MbType": 0,
+                "GetDiffLumaLocation": {
+                    "IsEmpty": true,
+                    "X": 0,
+                    "Y": 0
+                },
+                "Available": false,
+                "TotalCoeff": 0,
+                "Luma4x4Blocks": []
+            }
+        ]
     }
 }

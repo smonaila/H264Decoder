@@ -9,6 +9,10 @@ using H264.Global.Variables;
 using H264.Global.Methods;
 using H264.Types;
 using System.IO.Compression;
+using System.Text.RegularExpressions;
+using System.Drawing;
+using MathExtensionMethods;
+using MbAddressLocations;
 
 namespace H264Utilities.Parsers;
 
@@ -34,7 +38,6 @@ public class H264Parsers
             GlobalVariables globalVariables = codecSettings.GlobalVariables;
 
             SliceHeader sliceHeader = new SliceHeader(Sps, Pps, NalUnit);
-
             bool IdrPicFlag = (NalUnit.NalUnitType == 5) ? true : false;
 
             sliceHeader.first_mb_in_slice = bitStream.ue();
@@ -141,6 +144,7 @@ public class H264Parsers
             }
             globalVariables.MbaffFrameFlag = ((Sps.mb_adaptive_frame_field_flag == 1) && (!(sliceHeader.field_pic_flag == true))) == true ? 1 : 0;
             globalVariables.PicHeightInMbs = globalVariables.FrameHeightInMbs / (1 + (sliceHeader.field_pic_flag == true ? 1 : 0));
+            globalVariables.PicWidthInMbs = (int)Sps.pic_width_in_mbs_minus1 + 1;
             globalVariables.PicHeightInSamplesL = globalVariables.PicHeightInMbs * globalVariables.MbHeightC;
             globalVariables.PicSizeInMbs = globalVariables.PicWidthInMbs * globalVariables.PicHeightInMbs;
             globalVariables.MaxPicNum = !sliceHeader.field_pic_flag ? globalVariables.MaxFrameNum : 2 * globalVariables.MaxFrameNum;
@@ -155,6 +159,11 @@ public class H264Parsers
             codecSettings.GlobalVariables = globalVariables;
             settingsService.Update<GlobalVariables>(globalVariables);
             settingsService.Update<SliceHeader>(sliceHeader);
+
+            Extras extras = settingsService.GetCodecSettings().Extras;
+            List<MbAddress> MbAddresses = new List<MbAddress>();
+            extras.MbAddresses = MbAddresses;
+            settingsService.Update<Extras>(extras);
 
             return sliceHeader;
         }
@@ -738,7 +747,7 @@ public class H264Parsers
             if (!(Sps.separate_colour_plane == 1))
             {
                 globalVariables.ChromaArrayType = (ushort)Sps.chroma_format_idc;
-            }else
+            } else
             {
                 globalVariables.ChromaArrayType = 0;
             }
@@ -778,6 +787,15 @@ public class H264Parsers
             synElemSlice.settingSets = settingSets;
 
             macroblockLayer.mb_type = Pps.entropy_coding_mode_flag ? (uint)bitStream.ae(synElemSlice) : bitStream.ue();
+            SliceMicroblock? SliceMb = macroblockTypes.GetMbType(macroblockLayer.mb_type);
+            List<MbAddress> MbAddresses = extras.MbAddresses;
+            MbAddress? MbAddress = MbAddresses.Where(mbA => mbA.Address == globalVariables.CurrMbAddr).FirstOrDefault();
+            MbAddress = MbAddress != null ? MbAddress : new MbAddress();
+            MbAddress.Address = globalVariables.CurrMbAddr;
+            MbAddress.FrameNum = (int)sliceHeader.frame_num;
+            MbAddress.MbType = (int)macroblockLayer.mb_type;
+            MbAddress.SliceType = (int)sliceHeader.slice_type;           
+
             if (macroblockLayer.mb_type == (uint)MicroblockType.I_PCM)
             {
                 while (!bitStream.byte_aligned())
@@ -867,8 +885,19 @@ public class H264Parsers
                     {
                         // Read the mb_qp_delta
                         macroblockLayer.mb_qp_delta = Pps.entropy_coding_mode_flag ? (uint)bitStream.ae() : (uint)bitStream.se();
+                        
+                        globalVariables.QPprime = ((globalVariables.QPYprev + macroblockLayer.mb_qp_delta + 52 + 2 * globalVariables.QpBdOffsetY) %
+                        (52 + globalVariables.QpBdOffsetY)) - globalVariables.QpBdOffsetY;
+                        if (Sps.qpprime_y_zero_transform_bypass_flag == 1 && (globalVariables.QPprime == 0))
+                        {
+                            globalVariables.TransformBypassModeFlag = true;
+                        } else
+                        {
+                            globalVariables.TransformBypassModeFlag = false;
+                        }
                         extras.MacroblockLayer = macroblockLayer;
                         settingsService.Update(extras);
+                        settingsService.Update(globalVariables);
                         parse_residual(bitStream, 0, 15);
                         
                         // Residual(0, 15);
@@ -894,11 +923,12 @@ public class H264Parsers
             SPS Sps = settingSets.GetSPS;
             ResidualLuma residualLuma;
             Residual residual = new Residual();
+            GlobalFunctions globalFunctions = new GlobalFunctions();
 
             int[] I16x16DCLevel = new int[16];
             int[,] I16x16ACLevel = new int[16, 15];
             int[,] Level4x4 = new int[16, 16];
-            int[,] Level8x8 = new int[4, 16];
+            int[,] Level8x8 = new int[4, 64];
 
             if (!Pps.entropy_coding_mode_flag)
             {
@@ -910,26 +940,29 @@ public class H264Parsers
                 ResidualBlockCabac residualBlockCabac = new ResidualBlockCabac(bitStream);
                 ResidualBlock = residualBlockCabac;
                 residualLuma = new ResidualLuma(residualBlockCabac, settingsService);                
-            }
+            }                       
             residualLuma.GetResidualLuma(out I16x16DCLevel, out I16x16ACLevel, out Level4x4, out Level8x8, startIdx, endIdx);
             residual.Intra16x16DCLevel = I16x16DCLevel;
             residual.Intra16x16ACLevel = I16x16ACLevel;
             residual.LumaLevel4x4 = Level4x4;
             residual.LumaLevel8x8 = Level8x8;
-
-            using (StreamReader streamReader = new StreamReader(@"Data\SliceMicroblockTables.json"))
+            
+            using (StreamReader streamReader = new StreamReader(@"C:\H264Decoder\h264Service\Data\SliceMicroblockTables.json"))
            {
                 string jsonChromaString = streamReader.ReadToEnd();
-                List<ChromaFormat>? chromaFormats = JsonSerializer.Deserialize<List<ChromaFormat>>(jsonChromaString);
+                SliceTypeMicroblock? sliceTypeMacroblocks = JsonSerializer.Deserialize<SliceTypeMicroblock>(jsonChromaString);
+                sliceTypeMacroblocks = sliceTypeMacroblocks != null ? sliceTypeMacroblocks : new SliceTypeMicroblock();
+                List<ChromaFormat> chromaFormats = sliceTypeMacroblocks.ChromaWidthHeight;
                 ChromaFormat? chromaFormat = (from cf in chromaFormats
                                             where (uint)cf.ChromaFormatIdc == Sps.chroma_format_idc &&
                                             cf.SeparateColorPlaneFlag == Sps.separate_colour_plane
                                             select cf).FirstOrDefault();
+                
                 chromaFormat = chromaFormat != null ? chromaFormat : new ChromaFormat();
                 globalVariables.NumC8x8 = (int)(4 / ((uint)chromaFormat.SubWidthC * (uint)chromaFormat.SubHeightC));
 
                 if (globalVariables.ChromaArrayType == 1 || globalVariables.ChromaArrayType == 2)
-                {                    
+                {   
                     residual.ChromaDCLevel = new int[2, 4 * globalVariables.NumC8x8];
                     residual.ChromaACLevel = new int[2, globalVariables.NumC8x8, 15];
 
@@ -951,7 +984,7 @@ public class H264Parsers
                             }
                         }
                     }
-
+                   
                     for (int iCbCr = 0; iCbCr < 2; iCbCr++)
                     {
                         for (int i8x8 = 0; i8x8 < globalVariables.NumC8x8; i8x8++)
@@ -977,7 +1010,7 @@ public class H264Parsers
                         }
                     }
                 }
-                else if (globalVariables.ChromaArrayType == 3  )
+                else if (globalVariables.ChromaArrayType == 3)
                 {
                     residualLuma.GetResidualLuma(out I16x16DCLevel, out I16x16ACLevel, out Level4x4, out Level8x8, startIdx, endIdx);
                     residual.CbIntra16x16DCLevel = I16x16DCLevel;
@@ -992,7 +1025,7 @@ public class H264Parsers
                     residual.CrLevel8x8 = Level8x8;
                 }                
            }
-            return residual;
+           return residual;
         }
         catch (System.Exception)
         {            
@@ -1007,6 +1040,7 @@ public class H264Parsers
             SliceData sliceData = new SliceData();
             SettingSets codecSettings = settingsService.GetCodecSettings();
             GlobalVariables globalVariables = codecSettings.GlobalVariables;
+            Extras extras = codecSettings.Extras;
 
             GlobalFunctions globalFunctions = new GlobalFunctions(settingsService, sliceHeader);
 
@@ -1023,7 +1057,7 @@ public class H264Parsers
             }
             globalVariables.CurrMbAddr = (int)sliceHeader.first_mb_in_slice * (1 + globalVariables.MbaffFrameFlag);
             SynElemSlice synElemSlice = new SynElemSlice();
-            synElemSlice.Slicetype = sliceHeader.slice_type;
+            synElemSlice.Slicetype = sliceHeader.slice_type;            
             do
             {
                 if (sliceHeader.slice_type != Slicetype.I && sliceHeader.slice_type != Slicetype.SI)
@@ -1056,7 +1090,20 @@ public class H264Parsers
                         sliceData.mb_field_decoding_flag = Pps.entropy_coding_mode_flag ? bitStream.ae() == 1 : bitStream.u(1) == 1;
                     }
                     settingsService.Update<SliceData>(sliceData);
+                    MbAddress MbAddress = new MbAddress();
+                    MbAddress.Address = globalVariables.CurrMbAddr;
+                    MbAddress.FrameNum = (int)sliceHeader.frame_num; 
+                    MbAddress.SliceType = (int)sliceHeader.slice_type;
+                    
+                    bool IsFirstBool = MbAddress.Address == 0;
+                    globalVariables.QPYprev = IsFirstBool ? sliceHeader.slice_qp_delta : MbAddress.QP;
+                    extras.MbAddresses.Add(MbAddress);
+                    settingsService.Update<GlobalVariables>(globalVariables);
+                    settingsService.Update<Extras>(extras);
                     parse_macroblock_layer(bitStream, synElemSlice);
+
+                    // Decode Transformed Coefficients
+                    TransCoeffDec(MbAddress);
                 }
                 if (!Pps.entropy_coding_mode_flag)
                 {
@@ -1085,6 +1132,521 @@ public class H264Parsers
         }
         catch (System.Exception)
         {
+            throw;
+        }
+    }
+
+    private void TransCoeffDec(MbAddress CurrMb)
+    {
+        try
+        {
+            CodecSettings codecSettings = new CodecSettings();
+            SettingSets settingSets = codecSettings.GetCodecSettings();
+            SliceHeader sliceHeader = settingSets.SliceHeader;
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            SynElemSlice synElemSlice = new SynElemSlice();
+            synElemSlice.Slicetype = sliceHeader.slice_type;
+            synElemSlice.SynElement = SynElement.mb_skip_flag;
+
+            MicroblockTypes macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
+            PredictionModes predictionModes = macroblockTypes.MbPartPredMode((uint)CurrMb.MbType, 0);
+            int[,] c = new int[4, 4], u;
+            int[,] r = new int[4, 4];
+
+            if (predictionModes == PredictionModes.Intra_4x4)
+            {
+                u = Res4x4DecProc(CurrMb);
+            }
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    private int[,] Res4x4DecProc(MbAddress CurrAddr)
+    {
+        try
+        {
+            CodecSettings codecSettings = new CodecSettings();
+            SettingSets settingSets = codecSettings.GetCodecSettings();
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            SliceHeader sliceHeader = settingSets.SliceHeader;
+
+            SynElemSlice synElemSlice = new SynElemSlice();
+            synElemSlice.Slicetype = sliceHeader.slice_type;
+            synElemSlice.SynElement = SynElement.mb_skip_flag;
+
+            MicroblockTypes macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
+            int[,] c, r, u = new int[4, 4];
+            MbAddressComputation mbAddressComputation = new MbAddressComputation();
+            for (int Luma4x4BlkIdx = 0; Luma4x4BlkIdx < CurrAddr.LumaLevels4x4.Length; Luma4x4BlkIdx++)
+            {
+                c = InverseScanning4x4(CurrAddr.LumaLevels4x4, Luma4x4BlkIdx);
+                r = ScalingAndTransResidual4x4(c);
+
+                if (globalVariables.TransformBypassModeFlag && 
+                    macroblockTypes.MbPartPredMode((uint)CurrAddr.MbType, 0) == PredictionModes.Intra_4x4 &&
+                    Intra4x4PredMode(Luma4x4BlkIdx) == Intra4x4PredModes.Intra4x4Vertical || 
+                    Intra4x4PredMode(Luma4x4BlkIdx) == Intra4x4PredModes.Intra4x4Horizontal)
+                {
+                    int nW = 4, nH = 4;
+                    r = IResTransBypassDec(nW, nH, Intra4x4PredMode(Luma4x4BlkIdx), r);
+                    Point UpperLeftLuma = mbAddressComputation.Get4x4LumaLocation(Luma4x4BlkIdx);
+
+                    int[,] predLumas = pred4x4Y(Luma4x4BlkIdx);
+                    for (int row = 0; row < 4; row++)
+                    {
+                        for (int col = 0; col < 4; col++)
+                        {
+                            u[row, col] = Mathematics.Clip1Y(predLumas[UpperLeftLuma.X + col, + UpperLeftLuma.Y + row] + r[row, col]);
+                        }
+                    }
+                    ResSampleSource resSampleSource = new ResSampleSource();
+                    resSampleSource.U = u;
+                    resSampleSource.SampleType = SampleType.Y;
+                    resSampleSource.Rows = 4;
+                    resSampleSource.Cols = 4;
+                    resSampleSource.Luma4x4BlkIdx = Luma4x4BlkIdx;
+                    ConPicPrioDiBlPicFil(resSampleSource);
+                }
+            }
+            return u;
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    public void ConPicPrioDiBlPicFil(ResSampleSource resSampleSource)
+    {
+        try
+        {
+            CodecSettings codecSettings = new CodecSettings();
+            MbAddressComputation mbAddressComputation = new MbAddressComputation();
+            SettingSets settingSets = codecSettings.GetCodecSettings();
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            MbAddress? CurrAddress = settingSets.Extras.MbAddresses.Where(a => a.Address == globalVariables.CurrMbAddr).FirstOrDefault();
+            CurrAddress = CurrAddress != null ? CurrAddress : throw new Exception();
+            Point UpperLeftLuma = InverseMBScan(CurrAddress);
+            int[,] u = resSampleSource.U;
+            int nE = 0;
+
+            if (resSampleSource.SampleType == SampleType.Y)
+            {
+                Point UpperLeftSample = new Point(0, 0);                
+                if (resSampleSource.Cols == 16 && resSampleSource.Rows == 16)
+                {
+                    UpperLeftSample = new Point(0, 0);
+                    nE = 16;
+                } else if (resSampleSource.Cols == 4 && resSampleSource.Rows == 4)
+                {
+                    UpperLeftSample = mbAddressComputation.Get4x4LumaLocation(resSampleSource.Luma4x4BlkIdx); 
+                    nE = 4;
+                } else if (resSampleSource.Cols == 8 && resSampleSource.Rows == 8)
+                {
+                    UpperLeftSample = mbAddressComputation.Get8x8LumaLocation(resSampleSource.Luma4x4BlkIdx);
+                }
+                CurrAddress.ConstructedLumas = new int[globalVariables.PicWidthInSamplesL, globalVariables.PicHeightInSamplesL];
+                if (globalVariables.MbaffFrameFlag == 1)
+                {
+                    for (int row = 0; row < nE - 1; row++)
+                    {
+                        for (int col = 0; col < nE - 1; col++)
+                        {
+                            CurrAddress.ConstructedLumas[UpperLeftLuma.X + UpperLeftSample.X + col, 
+                            2 * (UpperLeftSample.Y + row)] = u[row, col];
+                        }
+                    }
+                } else
+                {
+                    for (int row = 0; row < nE - 1; row++)
+                    {
+                        for (int col = 0; col < nE - 1; col++)
+                        {
+                            CurrAddress.ConstructedLumas[UpperLeftLuma.X + UpperLeftSample.X + col, 
+                            UpperLeftLuma.Y + UpperLeftSample.Y + row] = u[row, col];
+                        }
+                    }
+                }
+            }
+            codecSettings.Update<Extras>(extras);            
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    public int[,] pred4x4Y(int Luma4x4BlkIdx)
+    {
+        try
+        {
+            MbAddressComputation mbAddressComputation = new MbAddressComputation();
+            CodecSettings codecSettings = new CodecSettings();
+            SettingSets settingSets = codecSettings.GetCodecSettings();
+            SliceHeader sliceHeader = settingSets.SliceHeader;
+            PPS Pps = settingSets.GetPPS;
+            SPS Sps = settingSets.GetSPS;
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            
+             SynElemSlice synElemSlice = new SynElemSlice();
+            synElemSlice.Slicetype = sliceHeader.slice_type;
+            synElemSlice.SynElement = SynElement.mb_skip_flag;
+
+            MicroblockTypes macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
+
+            MbAddress? CurrMbAddress = settingSets.Extras.MbAddresses.Where(mb => mb.Address == globalVariables.CurrMbAddr).FirstOrDefault();
+            CurrMbAddress = CurrMbAddress != null ? CurrMbAddress : new MbAddress();
+            Point UpperLeftLumaSample = mbAddressComputation.Get4x4LumaLocation(Luma4x4BlkIdx);
+            List<Sample> samples =
+            [
+                new Sample(){ Location = new Point(-1, -1)},
+                new Sample(){ Location = new Point(-1, 0)},
+                new Sample(){ Location = new Point(-1, 1)},
+                new Sample(){ Location = new Point(-1, 2)},
+                new Sample(){ Location = new Point(-1, 3)},
+                new Sample(){ Location = new Point(0, -1)},
+                new Sample(){ Location = new Point(1, -1)},
+                new Sample(){ Location = new Point(2, -1)},
+                new Sample(){ Location = new Point(3, -1)},
+                new Sample(){ Location = new Point(4, -1)},
+                new Sample(){ Location = new Point(5, -1)},
+                new Sample(){ Location = new Point(6, -1)},
+                new Sample(){ Location = new Point(7, -1)},
+            ];
+
+            foreach (var sample in samples)
+            {
+                sample.LumaOrChromaLocation = new Point(sample.Location.X + UpperLeftLumaSample.X, sample.Location.Y + UpperLeftLumaSample.Y);
+                NeighbouringLocation neighbouringLocation = mbAddressComputation.GetNeighbouringLocation(sample.LumaOrChromaLocation, true);
+                NeighbouringMbAndAvailability neighbouringMbAndAvailability = mbAddressComputation.GetNeighbouringMbAndAvailability();
+                neighbouringMbAndAvailability = neighbouringMbAndAvailability != null ? neighbouringMbAndAvailability : new NeighbouringMbAndAvailability();
+                MbAddress? MbAddressN = new MbAddress(); 
+                if (neighbouringLocation.MbAddress == MbAddressNeighbour.MbAddressA)
+                {
+                    MbAddressN = neighbouringMbAndAvailability.MbAddressA;
+                } else if (neighbouringLocation.MbAddress == MbAddressNeighbour.MbAddressB)
+                {
+                    MbAddressN = neighbouringMbAndAvailability.MbAddressB;
+                } else if (neighbouringLocation.MbAddress == MbAddressNeighbour.MbAddressC)
+                {
+                    MbAddressN = neighbouringMbAndAvailability.MbAddressC;
+                } else if (neighbouringLocation.MbAddress == MbAddressNeighbour.MbAddressD)
+                {
+                    MbAddressN = neighbouringMbAndAvailability.MbAddressD;
+                }
+                MbAddressN = MbAddressN != null ? MbAddressN : new MbAddress();
+                if (!MbAddressN.Available || ((MbAddressN.SliceType == (int)Slicetype.B ||
+                                              MbAddressN.SliceType == (int)Slicetype.P) && 
+                                              Pps.constrained_intra_pred_flag) || 
+                                              (MbAddressN.SliceType == (int)Slicetype.SI && Pps.constrained_intra_pred_flag) ||
+                                              (CurrMbAddress.SliceType != (int)Slicetype.SI) ||
+                                              (sample.Location.X > 3 && (Luma4x4BlkIdx == 3 || Luma4x4BlkIdx == 11)))
+                {
+                    sample.SampleAvailable = false;
+                } else
+                {
+                    sample.SampleAvailable = true;
+                    Point UpperLeftLumaN = InverseMBScan(MbAddressN);
+                    if (globalVariables.MbaffFrameFlag == 1)
+                    {
+                        sample.SampleValue = MbAddressN.ConstructedLumas[neighbouringLocation.Location.X + UpperLeftLumaN.X, neighbouringLocation.Location.Y + 2 * UpperLeftLumaN.Y];
+                    } else
+                    {
+                        sample.SampleValue = MbAddressN.ConstructedLumas[neighbouringLocation.Location.X + UpperLeftLumaN.X, neighbouringLocation.Location.Y + UpperLeftLumaN.Y];
+                    }
+                }
+            }     
+
+            foreach (var sample in samples)
+            {
+                if ((sample.Location.X >= 4 && sample.Location.X <= 7) && (sample.Location.Y == -1))
+                {
+                    Sample? p = (from s in samples
+                                where s.Location.X == 3 && s.Location.Y == -1
+                                select s).FirstOrDefault();
+                    p = p != null ? p : new Sample();
+                    if (!sample.SampleAvailable && p.SampleAvailable)
+                    {
+                        sample.SampleValue = p.SampleValue;
+                        sample.SampleAvailable = true;
+                    }
+                }
+            }
+            int[, ] predY = new int[4, 4];
+            Intra4x4PredModes intra4X4PredMode = Intra4x4PredMode(Luma4x4BlkIdx);
+            if (intra4X4PredMode == Intra4x4PredModes.Intra4x4Vertical)
+            {
+                var currentSamples = samples.Where(s => ((s.Location.X >= 0 && s.Location.X <= 3 && s.Location.Y == -1) && s.SampleAvailable)).ToList();
+                if (currentSamples.Count > 0)
+                {
+                    for (int predYrow = 0; predYrow < 4; predYrow++)
+                    {
+                        for (int predYcol = 0; predYcol < 4; predYcol++)
+                        {
+                            Sample? cY = (from s in currentSamples
+                                         where (s.Location.X == predYrow && s.Location.Y == -1)
+                                         select s).FirstOrDefault();
+                            cY = cY != null ? cY : new Sample();
+                            predY[predYrow, predYcol] = cY.SampleValue;
+                        }
+                    }
+                }
+            } else if (intra4X4PredMode == Intra4x4PredModes.Intra4x4Horizontal)
+            {
+                var currentSamples = samples.Where(s => (s.Location.X == -1 && 
+                s.Location.Y >= 0 && s.Location.Y <= 3 && s.SampleAvailable)).ToList();
+                if (currentSamples.Count > 0)
+                {
+                    for (int predYrow = 0; predYrow < 4; predYrow++)
+                    {
+                        for (int predYcol = 0; predYcol < 4; predYcol++)
+                        {
+                            Sample? cY = (from s in currentSamples
+                                         where (s.Location.X == -1 && s.Location.Y == predYcol)
+                                         select s).FirstOrDefault();
+                            cY = cY != null ? cY : new Sample();
+                            predY[predYrow, predYcol] = cY.SampleValue;
+                        }
+                    }
+                }
+            } else if (intra4X4PredMode == Intra4x4PredModes.Intra4x4DC)
+            {
+                var currentSamples = samples.Where(s => s.Location.X >= 0 && s.Location.X <= 3 && 
+                (s.Location.Y == -1) && s.Location.X == -1 && s.Location.Y >= 0 && s.Location.Y <= 3).ToList();
+                int predYVal = 0;
+                if (currentSamples.Find(s => !s.SampleAvailable) == null)
+                {                    
+                    predYVal = currentSamples.Sum(c => c.SampleValue) >> 3;
+                    for (int predYrow = 0; predYrow < 4; predYrow++)
+                    {
+                        for (int predYcol = 0; predYcol < 4; predYcol++)
+                        {
+                            predY[predYrow, predYcol] = predYVal;
+                        }
+                    }
+                } else if (currentSamples.Exists(s => (s.Location.X >= 0 
+                && s.Location.X <= 3 && s.Location.Y == -1 && !s.SampleAvailable)) && 
+                currentSamples.Find(s => s.Location.X == -1 && s.Location.Y >= 0 && s.Location.Y <= 3 
+                && !s.SampleAvailable) == null)
+                {
+                    var xSamples = currentSamples.Where(s => s.Location.X >= 0 && s.Location.X <= 3 && s.Location.Y == -1).ToList();
+                    predYVal = xSamples.Sum(s => s.SampleValue) >> 2;
+                } else if (currentSamples.Find(s => s.Location.Y == -1 && s.Location.X >= 0 && s.Location.X <= 3 
+                && s.SampleAvailable) == null && 
+                currentSamples.Exists(s => s.Location.X == -1 
+                && s.Location.Y >= 0 && s.Location.Y <= 3 && !s.SampleAvailable))
+                {
+                    var ySamples = currentSamples.Where(s => s.Location.X == -1 && s.Location.Y >= 0 
+                    && s.Location.Y <= 3).ToList();
+                    predYVal = ySamples.Sum(s => s.SampleValue) >> 2;
+                } else
+                {
+                    predYVal = 1 << ((int)globalVariables.BitDepthY - 1);
+                }
+
+                for (int predYrow = 0; predYrow < 4; predYrow++)
+                {
+                    for (int predYcol = 0; predYcol < 4; predYcol++)
+                    {
+                        predY[predYrow, predYcol] = predYVal;
+                    }
+                }                
+            } else if (intra4X4PredMode == Intra4x4PredModes.Intra4x4DiagonalDownLeft)
+            {
+                
+            }
+            return predY;   
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    public Intra4x4PredModes Intra4x4PredMode(int luma4x4BlkIdx)
+    {
+        try
+        {            
+            MbAddressComputation mbAddressComputation = new MbAddressComputation();
+            Neighbouring4x4LumaBlocks neighbouring4X4 = mbAddressComputation.GetNeighbouring4x4LumaBlk(luma4x4BlkIdx);
+            CodecSettings codecSettings = new CodecSettings();
+            SettingSets settingSets = codecSettings.GetCodecSettings();
+            Extras extras = settingSets.Extras;
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+            PPS Pps = settingSets.GetPPS;
+
+            MbAddress? CurrMbAddress = extras.MbAddresses.Where(mb => mb.Address == globalVariables.CurrMbAddr).FirstOrDefault();
+            CurrMbAddress = CurrMbAddress != null ? CurrMbAddress : throw new Exception();
+
+            SliceHeader sliceHeader = settingSets.SliceHeader;
+            
+            MbAddress? mbAddressA = neighbouring4X4.MbAddressA;
+            mbAddressA = mbAddressA != null ? mbAddressA : throw new Exception();
+            MbAddress? mbAddressB = neighbouring4X4.MbAddressB;
+            mbAddressB = mbAddressB != null ? mbAddressB : throw new Exception();
+
+            mbAddressA = mbAddressComputation.MbAddrAvailable(mbAddressA, CurrMbAddress);
+            mbAddressB = mbAddressComputation.MbAddrAvailable(mbAddressB, CurrMbAddress);
+
+            SynElemSlice synElemSlice = new SynElemSlice();
+            synElemSlice.Slicetype = (Slicetype)mbAddressA.SliceType;
+            MicroblockTypes macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);           
+
+            bool dcPredModePredictedFlag = false;
+            if (!mbAddressA.Available || !mbAddressB.Available || ((mbAddressA.Available && 
+            (Slicetype)mbAddressA.SliceType == Slicetype.P || 
+            (Slicetype)mbAddressA.SliceType == Slicetype.B) && Pps.constrained_intra_pred_flag) ||
+            ((mbAddressB.Available && (Slicetype)mbAddressB.SliceType == Slicetype.P ||
+            (Slicetype)mbAddressB.SliceType == Slicetype.B) && Pps.constrained_intra_pred_flag))
+            {
+                dcPredModePredictedFlag = true;
+            }
+            int intraMxMPredModelA = 0, intraMxMPredModelB = 0;
+
+            if (dcPredModePredictedFlag || 
+            macroblockTypes.MbPartPredMode((uint)mbAddressA.MbType, 0) != PredictionModes.Intra_4x4 ||
+            macroblockTypes.MbPartPredMode((uint)mbAddressA.MbType, 0) != PredictionModes.Intra_8x8)
+            {
+                intraMxMPredModelA = 2;
+            }
+
+            if (dcPredModePredictedFlag || 
+            macroblockTypes.MbPartPredMode((uint)mbAddressB.MbType, 0) != PredictionModes.Intra_4x4 ||
+            macroblockTypes.MbPartPredMode((uint)mbAddressB.MbType, 0) != PredictionModes.Intra_8x8)
+            {
+                intraMxMPredModelB = 2;
+            }
+
+            if (!dcPredModePredictedFlag)
+            {
+                if (macroblockTypes.MbPartPredMode((uint)mbAddressA.MbType, 0) == PredictionModes.Intra_4x4)
+                {
+                    
+                }
+            }
+            return Intra4x4PredModes.Intra4x4DiagonalDownLeft;
+        }
+        catch (System.Exception)
+        {
+            
+            throw;
+        }
+    }
+
+    private Point InverseMBScan(MbAddress currMb)
+    {
+        try
+        {
+            CodecSettings codecSettings = new CodecSettings();
+            SettingSets settingSets = codecSettings.GetCodecSettings();
+            GlobalVariables globalVariables = settingSets.GlobalVariables;
+
+            Point LumaSampleLoc = new Point(0, 0);
+            if (globalVariables.MbaffFrameFlag == 0)
+            {
+                LumaSampleLoc.X = Mathematics.InverseRasterScan(currMb.Address, 16, 16, globalVariables.PicWidthInSamplesL, 0);
+                LumaSampleLoc.Y = Mathematics.InverseRasterScan(currMb.Address, 16, 16, globalVariables.PicWidthInSamplesL, 1);
+            }
+            return LumaSampleLoc;
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    private int[,] IResTransBypassDec(int nW, int nH, Intra4x4PredModes intra4x4PredMode, int[,] r)
+    {
+        try
+        {
+            int[,] f = new int[nW, nH];
+            for (int hIndex = 0; hIndex < nH; hIndex++)
+            {
+                for (int wIndex = 0; wIndex < nW; wIndex++)
+                {
+                    f[hIndex, wIndex] = r[hIndex, wIndex];
+                }
+            }
+
+            int rValue = 0;
+            if (intra4x4PredMode == Intra4x4PredModes.Intra4x4Vertical)
+            {                
+                for (int hIndex = 0; hIndex < nH; hIndex++)
+                {
+                    for (int wIndex = 0; wIndex < nW; wIndex++)
+                    {
+                        for (int k = 0; k <= hIndex; k++)
+                        {
+                            rValue += f[k, wIndex]; 
+                        }
+                        r[hIndex, wIndex] = rValue;                        
+                    }
+                }
+            } else if(intra4x4PredMode == Intra4x4PredModes.Intra4x4Horizontal)
+            {
+                for (int hIndex = 0; hIndex < nH; hIndex++)
+                {
+                    for (int wIndex = 0; wIndex < nW; wIndex++)
+                    {
+                        for (int k = 0; k <= hIndex; k++)
+                        {
+                            rValue += f[hIndex, k];
+                        }
+                        r[hIndex, wIndex] = rValue;                        
+                    }
+                }
+            }
+            return r;
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    private int[,] ScalingAndTransResidual4x4(int[,] c)
+    {
+        try
+        {
+            throw new NotImplementedException();
+        }
+        catch (System.Exception)
+        {            
+            throw;
+        }
+    }
+
+    private int[,] InverseScanning4x4(int[,] Coeff, int Luma4x4BlkIdx)
+    {
+        try
+        {
+            int[,] c = new int[4, 4];
+
+            c[0, 0] = Coeff[Luma4x4BlkIdx, 0];
+            c[0, 1] = Coeff[Luma4x4BlkIdx, 1];
+            c[1, 0] = Coeff[Luma4x4BlkIdx, 2];
+            c[2, 1] = Coeff[Luma4x4BlkIdx, 3];
+            c[1, 1] = Coeff[Luma4x4BlkIdx, 4];
+            c[0, 2] = Coeff[Luma4x4BlkIdx, 5];
+            c[0, 3] = Coeff[Luma4x4BlkIdx, 6];
+            c[1, 2] = Coeff[Luma4x4BlkIdx, 7];
+            c[2, 1] = Coeff[Luma4x4BlkIdx, 8];
+            c[3, 0] = Coeff[Luma4x4BlkIdx, 9];
+            c[3, 1] = Coeff[Luma4x4BlkIdx, 10];
+            c[2, 2] = Coeff[Luma4x4BlkIdx, 11];
+            c[1, 3] = Coeff[Luma4x4BlkIdx, 12];
+            c[2, 3] = Coeff[Luma4x4BlkIdx, 13];
+            c[3, 2] = Coeff[Luma4x4BlkIdx, 14];
+            c[3, 3] = Coeff[Luma4x4BlkIdx, 15];
+
+            return c;
+        }
+        catch (System.Exception)
+        {
+            
             throw;
         }
     }

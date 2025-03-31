@@ -1,18 +1,32 @@
 
 
+
 namespace MathExtensionMethods
 {
     public static class Mathematics
     {
+        public static int Clip1Y(int x, int BitDepthY)
+        {
+           try
+           {
+                x = Mathematics.Clip3(0, 1 << BitDepthY - 1, x);
+                return x;
+           }
+           catch (System.Exception)
+           {            
+                throw;
+           }
+        }
+
         public static int Clip3(int x, int y, int z)
         {
             if (z < x)
             {
                 return x;
-            }else if (z > y)
+            } else if (z > y)
             {
                 return y;
-            }else
+            } else
             {
                 return z;
             }
@@ -34,6 +48,11 @@ namespace MathExtensionMethods
         public static (int, int) GetLocation(int x, int y)
         {
             return (x, y);
+        }
+
+        internal static int Clip1Y(object value)
+        {
+            throw new NotImplementedException();
         }
     }
 }

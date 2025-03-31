@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("h264Service.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+27c852ad3402355c016f59f2321d214b5c1188f4")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f3415af5e214f9b4ac9858d329e9b43bff744207")]
 [assembly: System.Reflection.AssemblyProductAttribute("h264Service.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("h264Service.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

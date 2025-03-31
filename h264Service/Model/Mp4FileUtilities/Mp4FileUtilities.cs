@@ -1021,7 +1021,6 @@ public static class Mp4FileUtilities
         }
         catch (System.Exception)
         {
-
             throw;
         }
     }

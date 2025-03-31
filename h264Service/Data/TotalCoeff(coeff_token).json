@@ -50,7 +50,7 @@
         "_2_lessorequal_nC_less_4": "0000111", 
         "_4_lessorequal_nC_less_8": "001000",
         "_8_lessorequal_nC": "001000",
-        "nC_equal_minus1": "000011", "nC_equal_minus2": "0000 00111"},
+        "nC_equal_minus1": "000011", "nC_equal_minus2": "0000 00111" },
 
         { "trailing_ones(coeff_token)": 1, 
         "total_coeff(coeff_token)": 3, 

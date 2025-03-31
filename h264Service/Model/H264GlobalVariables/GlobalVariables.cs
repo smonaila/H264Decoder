@@ -239,4 +239,7 @@ public class GlobalVariables
     public int FilterOffsetB { get; internal set; }
     [JsonPropertyName("slice_group_change_rate")]
     public uint SliceGroupChangeRate { get; internal set; }
+    public int QPYprev { get; set; }
+    public long QPprime { get; internal set; }
+    public bool TransformBypassModeFlag { get; set; }
 }

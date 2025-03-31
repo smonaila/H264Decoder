@@ -1,16 +1,204 @@
+using System.Drawing;
 using System.Net.Mime;
 using System.Reflection;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Decoder.H264ArrayParsers;
 using h264.NALUnits;
 using h264.syntaxstructures;
+using H264.Global.Methods;
 using H264.Global.Variables;
 using H264Utilities.Descriptors;
+using MbAddressLocations;
 using static h264.NALUnits.SliceHeader;
 
 namespace H264.Types;
 
+// Intra4x4PredMode[luma4x4BlkIdx] and associated.
+public enum Intra4x4PredModes
+{
+    Intra4x4Vertical,
+    Intra4x4Horizontal,
+    Intra4x4DC,
+    Intra4x4DiagonalDownLeft,
+    Intra4x4DiagonalDownRight,
+    Intra4x4VerticalRight,
+    Intra4x4HorizontalDown,
+    Intra4x4VerticalLeft,
+    Intra4x4HorizontalUp
+}
+
+// The type of a sample type (Cb, Cr or Y)
+public enum SampleType
+{
+    Y,
+    Cb,
+    Cr
+}
+
+// Sample type to represent a Luma or Chroma sample.
+public class Sample
+{
+    public Point Location { get; set; }
+    public int SampleValue { get; set; }
+    public SampleType SampleType { get; set; }
+    public Point LumaOrChromaLocation { get; set; }
+    public bool SampleAvailable { get; set; }
+}
+
+// uij is an array
+public class ResSampleSource
+{
+    public SampleType SampleType { get; set; }
+    public int[,] U { get; set; } = default!;
+    public int Cols { get; set; }
+    public int Rows { get; set; }
+    public int Luma4x4BlkIdx { get; set; }
+} 
+
+// Macroblock address types.
+public class MbAddress
+{
+    public int Address { get; set; }
+    public int SliceType { get; set; }
+    public int FrameNum { get; set; }
+    public int MbType { get; set; }
+    public Point GetDiffLumaLocation { get; set; }
+    public bool Available { get; set; }
+    public int TotalCoeff { get; set; }
+    public int[,] ConstructedLumas { get; set; } = default!;
+    public int QP { get; set; }
+    public CoeffLevelType CoeffLevelType { get; set; }
+
+    public int[] IntraDCLevels { get; set; } = default!;
+    public int[,] IntraACLevels { get; set; } = default!;
+    public int[,] LumaLevels4x4 { get; set; } = default!;
+    public int[,] LumaLevels8x8 { get; set; } = default!;
+
+    public int[] ChromaDCLevels { get; set; } = default!;
+    public int[,] ChromaACLevels { get; set; } = default!;
+    public int[,] CbChromaLevels4x4 { get; set; } = default!;
+    public int[,] CrChromaLevels8x8 { get; set; } = default!;
+}
+
+public class ZerosTableList
+{
+    [JsonPropertyName("total_zeros_tables")]
+    public List<TotalZerosTable> TotalZerosTables { get; set; } = new List<TotalZerosTable>();
+    [JsonPropertyName("run_before_table")]
+    public List<RunBeforeTable> RunBeforeTables { get; set; } = new List<RunBeforeTable>();
+}
+public class TotalZerosTable
+{
+    [JsonPropertyName("table_name")]
+    public string TableName { get; set; } = string.Empty;
+   
+    [JsonPropertyName("total_zeros_table")]
+    public List<ZerosTable> TotalZeros { get; set; } = new List<ZerosTable>();
+}
+
+public class ZerosTable
+{
+    [JsonPropertyName("total_zeros")]
+    public int TotalZeros { get; set; }
+
+    [JsonPropertyName("tzVlcIndex")]
+    public List<TzVlcIndexTable> TotalZeroVlc { get; set; } = new List<TzVlcIndexTable>();
+}
+
+public class RunBeforeTable
+{
+    [JsonPropertyName("run_before")]
+    public int RunBefore { get; set; }
+    [JsonPropertyName("zeros_left")]
+    public List<ZerosLeft> ZerosLeft { get; set; } = new List<ZerosLeft>();
+}
+
+public class ZerosLeft
+{
+    [JsonPropertyName("index")]
+    public int Index { get; set; }
+    [JsonPropertyName("bin_string")]
+    public string BinString { get; set; } = string.Empty;
+}
+
+public class TzVlcIndexTable
+{
+    [JsonPropertyName("index")]
+    public int Index { get; set; }
+    [JsonPropertyName("bin_string")]
+    public string BinString { get; set; } = string.Empty;
+}
+
+public enum CoeffLevelType
+{
+    Intra16x16DCLevel,
+    Intra16x16ACLevel,
+    CbIntra16x16DCLevel,
+    CbIntra16x16ACLevel,
+    CrIntra16x16DCLevel,
+    CrIntra16x16ACLevel,
+    LumaLevel4x4,
+    CbLevel4x4,
+    CrLevel4x4,
+    ChromaDCLevel,
+    ChromaACLevel,
+    Level8x8
+}
+public class CAVLCSettings
+{
+    [JsonPropertyName("cavlc_coeff_level_type")]
+    public CoeffLevelType CoeffLevelType { get; set; }
+}
+
+public enum MbAddressNeighbour
+{
+    MbAddressA,
+    MbAddressB,
+    MbAddressC,
+    MbAddressD,
+    CurrAddr
+}
+
+public class NeighbouringLocation
+{
+    public MbAddressNeighbour? MbAddress { get; set; }
+    public Point Location { get; set;}
+}   
+
+public class NeighbouringMbAndAvailability
+{
+    public MbAddress? MbAddressA { get; set; }
+    public MbAddress? MbAddressB { get; set; }
+    public MbAddress? MbAddressC { get; set; }
+    public MbAddress? MbAddressD { get; set; }
+}
+
+public class Neighbouring4x4LumaBlocks
+{
+    public MbAddress? MbAddressA { get; set; }
+    public MbAddress? MbAddressB { get; set; }
+    public BlockIdx? Luma4x4BlkIdxA { get; set; }
+    public BlockIdx? Luma4x4BlkIdxB { get; set; }
+}
+
+public class BlockIdx
+{
+    public int Idx { get; set; }
+    public (int, int) GetLumaLocation { get; set; }
+    public bool Available { get; set; }
+    public int TotalCoeff { get; set; } 
+    public CoeffLevelType CoeffTypes { get; set; }
+    public int[] Coeff { get; set; } = default!;
+    public int[] IntraDCLevels { get; set; } = default!;
+    public int[,] LumaLevels4x4 { get; set; } = default!;
+    public int[,] LumaLevels8x8 { get; set; } = default!;
+    public int[] ChromaDCLevels { get; set; } = default!;
+    public int[] ChromaACLevels { get; set; } = default!;
+    public int[,] CbChromaLevels4x4 { get; set; } = default!;
+    public int[,] CrChromaLevels8x8 { get; set; } = default!;
+}
 
 public interface ICoefficients
 {
@@ -35,6 +223,12 @@ public class CoeffTokenMapping
     public string nC_Equal_Minus1 { get; set; } = string.Empty;
     [JsonPropertyName("nC_equal_minus2")]
     public string nC_Equal_Minus2 { get; set; } = string.Empty;
+}
+
+public class TokenMappings
+{
+    [JsonPropertyName("coeff_token_mappings")]
+    public List<CoeffTokenMapping> CoeffTokenMappings { get; set; } = new List<CoeffTokenMapping>();
 }
 
 public class CurrentTokenMapping
@@ -120,6 +314,18 @@ public class ResidualBlockCAVLC : ICoefficients
             coeffLevels[i] = 0;
         }
         coeff_token = getCoeffToken(bitStream);
+        CodecSettings codecSettings = new CodecSettings();
+        SettingSets settingSets = codecSettings.GetCodecSettings();
+        GlobalVariables globalVariables = settingSets.GlobalVariables;
+        PPS Pps = settingSets.GetPPS;
+        Extras extras = settingSets.Extras;
+        MbAddress? MbAddress = extras.MbAddresses.Where(mbA => mbA.Address == globalVariables.CurrMbAddr).FirstOrDefault();
+        MbAddress = MbAddress != null ? MbAddress : new MbAddress();
+        MbAddress.Address = globalVariables.CurrMbAddr;
+        
+        MbAddress.TotalCoeff = coeff_token.Item1;
+        codecSettings.Update<Extras>(extras);
+
         levelVal = new int[coeff_token.Item1];
 
         if (coeff_token.Item1 > 0)
@@ -186,7 +392,13 @@ public class ResidualBlockCAVLC : ICoefficients
 
                 if (coeff_token.Item1 < endIdx - startIdx + 1)
                 {
-
+                    int[] runVal = RunVal(bitStream, coeff_token.Item1, maxNumCoeff);
+                    int coeffNum = -1;
+                    for (int cIndex = coeff_token.Item1 - 1; cIndex >= 0; cIndex--)
+                    {
+                        coeffNum += runVal[cIndex] + 1;
+                        coeffLevels[startIdx + coeffNum] = levelVal[cIndex];
+                    }
                 }
             }
         }
@@ -195,7 +407,19 @@ public class ResidualBlockCAVLC : ICoefficients
 
     private int getLevelPrefix(BitList bitStream)
     {
-        throw new NotImplementedException();
+        try
+        {
+            int leadingZeroBits = -1;
+            for (bool b = false; !b; leadingZeroBits++)
+            {
+                b = Convert.ToUInt32(bitStream.read_bits(1), 2) == 1;
+            }
+            return leadingZeroBits;
+        }
+        catch (System.Exception)
+        {
+            throw;
+        }
     }
 
     private Tuple<int, int> getCoeffToken(BitList bitList)
@@ -204,14 +428,15 @@ public class ResidualBlockCAVLC : ICoefficients
         {
             using (StreamReader streamReader = new StreamReader(@"C:\H264Decoder\h264Service\Data\TotalCoeff(coeff_token).json"))
             {
-                List<CoeffTokenMapping>? Tokenmappings = JsonSerializer.Deserialize<List<CoeffTokenMapping>>(streamReader.ReadToEnd());
-                Tokenmappings = Tokenmappings != null ? Tokenmappings : new List<CoeffTokenMapping>();
-                int nC = 0;
+                TokenMappings? Tokenmappings = JsonSerializer.Deserialize<TokenMappings>(streamReader.ReadToEnd());
+                Tokenmappings = Tokenmappings != null ? Tokenmappings : new TokenMappings();
+                
+                int nC = GetnC();
                 var currentMappings = new List<CurrentTokenMapping>();
 
                 if (nC >= 0 && nC < 2)
                 {
-                    currentMappings = (from tm in Tokenmappings
+                    currentMappings = (from tm in Tokenmappings.CoeffTokenMappings
                                         select new CurrentTokenMapping() {
                                             CoeffTokens = tm.CoeffTokens,
                                             TrailingOnes = tm.TrailingOnes,
@@ -219,7 +444,7 @@ public class ResidualBlockCAVLC : ICoefficients
                                         }).ToList();
                 } else if(nC >= 2 && nC < 4)
                 {
-                    currentMappings = (from tm in Tokenmappings
+                    currentMappings = (from tm in Tokenmappings.CoeffTokenMappings
                                         select new CurrentTokenMapping() {
                                             CoeffTokens = tm.CoeffTokens,
                                             TrailingOnes = tm.TrailingOnes,
@@ -227,7 +452,7 @@ public class ResidualBlockCAVLC : ICoefficients
                                         }).ToList();
                 } else if (nC >= 4 && nC < 8)
                 {
-                    currentMappings = (from tm in Tokenmappings
+                    currentMappings = (from tm in Tokenmappings.CoeffTokenMappings
                                         select new CurrentTokenMapping() {
                                             CoeffTokens = tm.CoeffTokens,
                                             TrailingOnes = tm.TrailingOnes,
@@ -235,7 +460,7 @@ public class ResidualBlockCAVLC : ICoefficients
                                         }).ToList();
                 } else if(nC >= 8)
                 {
-                    currentMappings = (from tm in Tokenmappings
+                    currentMappings = (from tm in Tokenmappings.CoeffTokenMappings
                                         select new CurrentTokenMapping() {
                                             CoeffTokens = tm.CoeffTokens,
                                             TrailingOnes = tm.TrailingOnes,
@@ -243,7 +468,7 @@ public class ResidualBlockCAVLC : ICoefficients
                                         }).ToList();
                 } else if(nC == -1)
                 {
-                    currentMappings = (from tm in Tokenmappings
+                    currentMappings = (from tm in Tokenmappings.CoeffTokenMappings
                                         select new CurrentTokenMapping() {
                                             CoeffTokens = tm.CoeffTokens,
                                             TrailingOnes = tm.TrailingOnes,
@@ -251,7 +476,7 @@ public class ResidualBlockCAVLC : ICoefficients
                                         }).ToList();
                 } else if (nC == -2)
                 {
-                    currentMappings = (from tm in Tokenmappings
+                    currentMappings = (from tm in Tokenmappings.CoeffTokenMappings
                                         select new CurrentTokenMapping() {
                                             CoeffTokens = tm.CoeffTokens,
                                             TrailingOnes = tm.TrailingOnes,
@@ -268,8 +493,286 @@ public class ResidualBlockCAVLC : ICoefficients
                                                         Token = string.Empty,
                                                         TrailingOnes = -1
                                                     };
+                bitStream.read_bits((uint)coeffTokenMapping.Token.Length);
                 return new Tuple<int, int>(coeffTokenMapping.CoeffTokens, coeffTokenMapping.TrailingOnes);
             }
+        }
+        catch (System.Exception)
+        {
+            throw;
+        }
+    }
+
+    public int GetnC()
+    {
+       try
+       {
+            int nC = 0;
+            GlobalFunctions globalFunctions = new GlobalFunctions();
+            GlobalVariables globalVariables = new GlobalVariables();
+            CAVLCSettings cAVLCSettings = globalFunctions.GetCAVLCSettings();
+            CodecSettings codecSettings = new CodecSettings();
+            SettingSets settingSets = codecSettings.GetCodecSettings();
+            SliceHeader sliceHeader = settingSets.SliceHeader;
+            SynElemSlice synElemSlice = new SynElemSlice();
+            Extras extras = settingSets.Extras;
+            MacroblockLayer macroblockLayer = extras.MacroblockLayer;
+            List<MbAddress> MbAddresses = extras.MbAddresses;
+            MicroblockTypes? macroblockTypes = null;
+
+            PPS Pps = settingSets.GetPPS;
+            MbAddressComputation mbAddressComputation = new MbAddressComputation();
+
+            if (cAVLCSettings.CoeffLevelType == CoeffLevelType.ChromaDCLevel)
+            {
+                if (globalVariables.ChromaArrayType == 1)
+                {
+                    nC = -1;
+                } else if (globalVariables.ChromaArrayType == 2)
+                {
+                    nC = -2;
+                }
+            } else
+            {
+                BlockIdx? blkA = null, blkB = null;
+                MbAddress? MbAddressA = null, MbAddressB = null;
+                if (cAVLCSettings.CoeffLevelType == CoeffLevelType.Intra16x16DCLevel)
+                {
+                    int Luma4x4BlkIdx = 0;
+                    Neighbouring4x4LumaBlocks neighbouring4X4LumaBlocks = mbAddressComputation.GetNeighbouring4x4LumaBlk(Luma4x4BlkIdx);       
+                    blkA = neighbouring4X4LumaBlocks.Luma4x4BlkIdxA;
+                    blkB = neighbouring4X4LumaBlocks.Luma4x4BlkIdxB;   
+                    MbAddressA = neighbouring4X4LumaBlocks.MbAddressA;
+                    MbAddressB = neighbouring4X4LumaBlocks.MbAddressB;      
+                }
+
+                int availableFlagA = 1;
+                int availableFlagB = 1;
+
+                blkA = blkA ?? new BlockIdx();
+                blkB = blkB ?? new BlockIdx();
+                MbAddressA = MbAddressA ?? new MbAddress();
+                MbAddressB = MbAddressB ?? new MbAddress();
+
+                MbAddress? CurrMbAddress = (from mbA in MbAddresses
+                                            where mbA.Address == globalVariables.CurrMbAddr
+                                            select mbA).FirstOrDefault();
+                CurrMbAddress = CurrMbAddress != null ? CurrMbAddress : new MbAddress();
+
+                if (!MbAddressA.Available || (Pps.constrained_intra_pred_flag && 
+                    (CurrMbAddress.SliceType == (int)Slicetype.I || 
+                        CurrMbAddress.SliceType == (int)Slicetype.SI) &&
+                        (MbAddressA.SliceType == (int)Slicetype.P ||
+                        MbAddressA.SliceType == (int)Slicetype.SP ||
+                        MbAddressA.SliceType == (int)Slicetype.B ||  
+                        MbAddressA.SliceType == (int)Slicetype.B)))
+                {
+                    availableFlagA = 0;
+                }
+
+                if (!MbAddressB.Available || (Pps.constrained_intra_pred_flag && 
+                        (CurrMbAddress.SliceType == (int)Slicetype.I || 
+                        CurrMbAddress.SliceType == (int)Slicetype.SI) &&
+                        MbAddressB.SliceType == (int)Slicetype.P ||
+                        MbAddressB.SliceType == (int)Slicetype.SP ||
+                        MbAddressB.SliceType == (int)Slicetype.B ||  
+                        MbAddressB.SliceType == (int)Slicetype.BS))
+                {
+                    availableFlagB = 0;
+                }
+
+                int nA = 0, nB = 0;
+                if (availableFlagA == 1)
+                {
+                    if ((MbAddressA.SliceType == (int)Slicetype.P || 
+                        MbAddressA.SliceType == (int)Slicetype.SP) || 
+                        MbAddressA.SliceType == (int)Slicetype.B ||
+                        MbAddressA.SliceType == (int)Slicetype.BS)
+                    {
+                        synElemSlice.Slicetype = (Slicetype)MbAddressA.SliceType;
+                        macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
+                        SliceMicroblock? sliceMacroblock = macroblockTypes.GetMbType((uint)MbAddressA.MbType);
+                        sliceMacroblock = sliceMacroblock != null ? sliceMacroblock : new SliceMicroblock();
+
+                        if (sliceMacroblock.NameOfMb == "P_Skip" || sliceMacroblock.NameOfMb == "B_Skip")
+                        {
+                            nA = 0;
+                        }
+                        // else if ()
+                        // {
+                            
+                        // }
+                    } else if ((MbAddressA.SliceType == (int)Slicetype.I || 
+                               MbAddressA.SliceType == (int)Slicetype.SI))
+                    {
+                        synElemSlice.Slicetype = (Slicetype)MbAddressA.SliceType;
+                        macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
+                        SliceMicroblock? sliceMacroblock = macroblockTypes.GetMbType((uint)MbAddressA.MbType);
+                        sliceMacroblock = sliceMacroblock != null ? sliceMacroblock : new SliceMicroblock();
+                        if (sliceMacroblock.NameOfMb != "I_PCM")
+                        {
+                            nA = 0;
+                        } else if(sliceMacroblock.NameOfMb == "I_PCM")
+                        {
+                            nA = 16;
+                        } else
+                        {
+                            nA = blkA.Idx;
+                        }
+                    }
+                }
+
+                if (availableFlagB == 1)
+                {
+                    if (MbAddressB.SliceType == (int)Slicetype.P || 
+                        MbAddressB.SliceType == (int)Slicetype.SP || 
+                        MbAddressB.SliceType == (int)Slicetype.B ||
+                        MbAddressB.SliceType == (int)Slicetype.BS)
+                    {
+
+                        synElemSlice.Slicetype = (Slicetype)MbAddressA.SliceType;
+                        macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
+                        SliceMicroblock? sliceMacroblock = macroblockTypes.GetMbType((uint)MbAddressB.MbType);
+                        sliceMacroblock = sliceMacroblock != null ? sliceMacroblock : new SliceMicroblock();
+
+                        if (sliceMacroblock.NameOfMb == "P_Skip" || sliceMacroblock.NameOfMb == "B_Skip")
+                        {
+                            nB = 0;
+                        }
+                    } else if ((MbAddressB.SliceType == (int)Slicetype.I || 
+                               MbAddressB.SliceType == (int)Slicetype.SI))
+                    {
+                        synElemSlice.Slicetype = (Slicetype)MbAddressA.SliceType;
+                        macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
+                        SliceMicroblock? sliceMacroblock = macroblockTypes.GetMbType((uint)MbAddressB.MbType);
+                        sliceMacroblock = sliceMacroblock != null ? sliceMacroblock : new SliceMicroblock();
+                        if (sliceMacroblock.NameOfMb != "I_PCM")
+                        {
+                            nB = 0;
+                        } else if(sliceMacroblock.NameOfMb == "I_PCM")
+                        {
+                            nB = 16;
+                        }else
+                        {
+                            nB = blkB.Idx;
+                        }
+                    }
+                }
+
+                if (availableFlagA == 1 && availableFlagB == 1)
+                {
+                    nC = (nA + nB + 1) >> 1;
+                }else if (availableFlagA == 1 && availableFlagB == 0)
+                {
+                    nC = nA;
+                }else if (availableFlagA == 0 && availableFlagB == 1)
+                {
+                    nC = nB;
+                }else
+                {
+                    nC = 0;
+                }
+            }
+            return nC;
+       }
+       catch (System.Exception)
+       {        
+            throw;
+       }
+    }
+
+    public int[] RunVal(BitList bitStream, int totalNonZeros, int maxNumCoeff)
+    {
+        try
+        {
+            int[] runVal = new int[totalNonZeros];
+            int zerosLeft = 0, total_zeros = 0; 
+            TotalZerosTable? totalZerosTable = new TotalZerosTable();
+            int tzVlcIndex = totalNonZeros;
+            using (StreamReader streamReader = new StreamReader(@"C:\H264Decoder\h264Service\Data\TotalZerosAndRunbeforeTables.json"))
+            {
+                ZerosTableList? totalZerosList = JsonSerializer.Deserialize<ZerosTableList>(streamReader.ReadToEnd());
+                totalZerosList = totalZerosList != null ? totalZerosList : new ZerosTableList(); 
+                List<RunBeforeTable>? runBeforeTables = totalZerosList.RunBeforeTables;
+                if (totalNonZeros == maxNumCoeff)
+                {
+                    zerosLeft = 0;
+                }
+                else
+                {
+                    if (maxNumCoeff == 4)
+                    {
+                        totalZerosTable = (from tzTable in totalZerosList.TotalZerosTables
+                                           where tzTable.TableName == "table_9_9a"
+                                           select tzTable).FirstOrDefault();
+                                               
+                    } else if (maxNumCoeff == 8)
+                    {
+                        totalZerosTable = (from tzTable in totalZerosList.TotalZerosTables
+                                           where tzTable.TableName == "table_9_9b"
+                                           select tzTable).FirstOrDefault();
+                    } else
+                    {
+                        if (tzVlcIndex >= 1 && tzVlcIndex <= 7)
+                        {
+                            totalZerosTable = (from tzTable in totalZerosList.TotalZerosTables
+                                               where tzTable.TableName == "table_9_7"
+                                               select tzTable).FirstOrDefault();
+                        } else if(tzVlcIndex >= 8 && tzVlcIndex <= 15)
+                        {
+                            totalZerosTable = (from tzTable in totalZerosList.TotalZerosTables
+                                               where tzTable.TableName == "table_9_8"
+                                               select tzTable).FirstOrDefault();
+                        }
+                    }
+                    totalZerosTable = totalZerosTable != null ? totalZerosTable : new TotalZerosTable();
+                    List<ZerosTable> zerosTables = totalZerosTable.TotalZeros;
+                    var totalZeros = (from tz in zerosTables
+                                      from tzVlc in tz.TotalZeroVlc
+                                      where tzVlc.Index == tzVlcIndex &&
+                                      tzVlc.BinString == bitStream.next_bits((uint)tzVlc.BinString.Length)
+                                      select new
+                                      {
+                                          total_zeros_value = tz.TotalZeros,
+                                          bitLength = tzVlc.BinString.Length
+                                      }).FirstOrDefault();
+                    totalZeros = totalZeros != null ? totalZeros : new { total_zeros_value = -1, bitLength = 0 };
+                    if (totalZeros.total_zeros_value >= 0)
+                    {
+                        bitStream.read_bits((uint)totalZeros.bitLength);
+                    }
+                    total_zeros = totalZeros.total_zeros_value;
+                }
+                zerosLeft = total_zeros;
+
+                for (int i = 0; i < totalNonZeros - 1; i++)
+                {
+                    if (zerosLeft > 0)
+                    {
+                        var runBefore = (from rb in runBeforeTables
+                                        from zl in rb.ZerosLeft
+                                        where zl.BinString == bitStream.next_bits((uint)zl.BinString.Length)
+                                        select new
+                                        {
+                                            run_before = rb.RunBefore,
+                                            binLength = zl.BinString.Length
+                                        }).FirstOrDefault();
+                        runBefore = runBefore != null ? runBefore : new { run_before = -1, binLength = 0};
+                        if (runBefore.binLength > 0)
+                        {
+                            bitStream.read_bits((uint)runBefore.binLength);
+                        }
+                        runVal[i] = runBefore.run_before;
+                    } else
+                    {
+                        runVal[i] = 0;
+                    }
+                    zerosLeft = zerosLeft - runVal[i];
+                }
+                runVal[totalNonZeros - 1] = zerosLeft;
+            }
+            
+            return runVal;
         }
         catch (System.Exception)
         {
@@ -290,6 +793,7 @@ public class ResidualLuma
     private ICoefficients Coefficients;
     private MicroblockTypes macroblockType;
     private MacroblockLayer macroblockLayer;
+    private Extras Extras;
     private PPS PPS;
     private SPS SPS;
     private GlobalVariables GlobalVariables;
@@ -311,17 +815,24 @@ public class ResidualLuma
         SynElemSlice synElemSlice = new SynElemSlice();
         synElemSlice.Slicetype = settingSets.SliceHeader.slice_type;
         synElemSlice.SynElement = SynElement.mb_type;
-
+        Extras = settingSets.Extras;
         macroblockType = new MicroblockTypes(service, synElemSlice);
         Coefficients = coefficients;
     }
 
-    public void GetResidualLuma(out int[] i16x16DCLevel,
-    out int[,] i16x16ACLevel, out int[,] level4x4,
+    public void GetResidualLuma(out int[] i16x16DCLevel, out int[,] i16x16ACLevel, out int[,] level4x4,
     out int[,] level8x8, int startIdx, int endIdx)
     {
+        StreamReader currMbStream = new StreamReader(@"C:\H264Decoder\h264Service\Data\currmbsettings.json");
+        GlobalFunctions globalFunctions = new GlobalFunctions();
+        CAVLCSettings CAVLCSettings = globalFunctions.GetCAVLCSettings();
+        currMbStream.Close();
+        globalFunctions.SetCoeffLevelType(CAVLCSettings);
+
         if (startIdx == 0 && macroblockType.MbPartPredMode(macroblockLayer.mb_type, 0) == PredictionModes.Intra_16x16)
         {
+            CAVLCSettings.CoeffLevelType = CoeffLevelType.Intra16x16DCLevel;
+            globalFunctions.SetCoeffLevelType(CAVLCSettings);
             I16x16DCLevel = Coefficients.GetCoefficients(I16x16DCLevel, 0, 15, 16);
         }
 
@@ -336,13 +847,18 @@ public class ResidualLuma
                         if (macroblockType.MbPartPredMode(macroblockLayer.mb_type, 0) == PredictionModes.Intra_16x16)
                         {
                             int[] tempCoefficient = new int[15];
+                            CAVLCSettings.CoeffLevelType = CoeffLevelType.Intra16x16ACLevel;
+                            globalFunctions.SetCoeffLevelType(CAVLCSettings);
                             int[] coefficients = Coefficients.GetCoefficients(tempCoefficient,
                             Math.Max(0, startIdx - 1), endIdx - 1, 15);
+
                             I16x16ACLevel = h264Array.Copy2DArray(I16x16ACLevel, i8x8 * 4 + i4x4, coefficients, 0, coefficients.Length);
                         }
                         else
                         {
                             int[] tempCoefficient = new int[16];
+                            CAVLCSettings.CoeffLevelType = CoeffLevelType.LumaLevel4x4;
+                            globalFunctions.SetCoeffLevelType(CAVLCSettings);
                             int[] coefficients = Coefficients.GetCoefficients(tempCoefficient,
                             startIdx, endIdx, 16);
                             Level4x4 = h264Array.Copy2DArray(Level4x4, i8x8 * 4 + i4x4, coefficients, 0, coefficients.Length);
@@ -350,13 +866,17 @@ public class ResidualLuma
                     }
                     else if (macroblockType.MbPartPredMode(macroblockLayer.mb_type, 0) == PredictionModes.Intra_16x16)
                     {
+                        CAVLCSettings.CoeffLevelType = CoeffLevelType.Intra16x16ACLevel;
+                        globalFunctions.SetCoeffLevelType(CAVLCSettings);
                         for (int i = 0; i < 15; i++)
                         {
-                            I16x16ACLevel[i8x8 * 4 + i4x4, i] = 0;
+                            I16x16ACLevel[i8x8 * 4 + i4x4, i] = 0;                            
                         }
                     }
                     else
                     {
+                        CAVLCSettings.CoeffLevelType = CoeffLevelType.LumaLevel4x4;
+                        globalFunctions.SetCoeffLevelType(CAVLCSettings);
                         for (int i = 0; i < 16; i++)
                         {
                             Level4x4[i8x8 * 4 + i4x4, i] = 0;
@@ -365,6 +885,8 @@ public class ResidualLuma
 
                     if (!PPS.entropy_coding_mode_flag && macroblockLayer.transform_size_8x8_flag)
                     {
+                        CAVLCSettings.CoeffLevelType = CoeffLevelType.Level8x8;
+                        globalFunctions.SetCoeffLevelType(CAVLCSettings);
                         for (int i = 0; i < 16; i++)
                         {
                             Level8x8[i8x8, 4 * i + i4x4] = Level4x4[i8x8 * 4 + i4x4, i];
@@ -375,11 +897,16 @@ public class ResidualLuma
             else if (((GlobalVariables.CodedBlockPatternChroma) & (1 << i8x8)) > 0)
             {
                 int[] tempCoefficient = new int[64];
+                CAVLCSettings.CoeffLevelType = CoeffLevelType.Level8x8;
+                globalFunctions.SetCoeffLevelType(CAVLCSettings);
                 int[] coefficients = Coefficients.GetCoefficients(tempCoefficient, 4 * startIdx, 4 * endIdx + 3, 64);
+                
                 h264Array.Copy2DArray(Level8x8, i8x8, coefficients, 0, coefficients.Length);
             }
             else
             {
+                CAVLCSettings.CoeffLevelType = CoeffLevelType.Level8x8;
+                globalFunctions.SetCoeffLevelType(CAVLCSettings);
                 for (int i = 0; i < 16; i++)
                 {
                     Level8x8[i8x8, i] = 0;
@@ -398,13 +925,13 @@ public class Residual
     public int[] Intra16x16DCLevel = new int[16];
     public int[,] Intra16x16ACLevel = new int[16, 15];
     public int[,] LumaLevel4x4 = new int[16, 16];
-    public int[,] LumaLevel8x8 = new int[4, 16];
+    public int[,] LumaLevel8x8 = new int[4, 64];
     public int[,] ChromaDCLevel;
     public int[,,] ChromaACLevel;
     public int[] CbIntra16x16DCLevel { get; set; } = new int[16];
     public int[,] CbIntra16x16ACLevel { get; set; } = new int[16, 15];
     public int[,] CbLevel4x4 { get; set; } = new int[16, 16];
-    public int[,] CbLevel8x8 { get; set; } = new int[4, 16];
+    public int[,] CbLevel8x8 { get; set; } = new int[4, 64];
     public int[] CrIntra16x16DCLevel { get; set; } = new int[16];
     public int[,] CrIntra16x16ACLevel { get; set; } = new int[16, 15];
     public int[,] CrLevel4x4 { get; set; } = new int[16, 16];
@@ -417,6 +944,8 @@ public class Extras
 {
     [JsonPropertyName("mcrb")]
     public MacroblockLayer MacroblockLayer { get; set; } = default!;
+    [JsonPropertyName("mb_list")]
+    public List<MbAddress> MbAddresses { get; set; } = default!;
 }
 
 public class ChromaArrayIdc
@@ -472,11 +1001,9 @@ public class ContextVariable
     public int CtxIdx { get; set; }
     public int M { get; set; }
     public int N { get; set; }
-
     public int PreCtxState { get; set; }
     public int ValMPS { get; set; }
     public int PStateIdx { get; set; }
-
     public bool IsInitialized { get; set; }
 }
 
@@ -513,7 +1040,6 @@ public enum PredictionModes
     Pred_L1 = 11,
     BiPred = 12,
 }
-
 
 public enum NumMbPartModes
 {
@@ -557,7 +1083,7 @@ public class SliceMicroblock
 public class BSliceMacroblock : SliceMicroblock
 {
     [JsonPropertyName("num_mb_part")]
-    public NumMbPartModes? NumMbPart { get; set; } = NumMbPartModes.Defult;
+    public NumMbPartModes NumMbPart { get; set; } = NumMbPartModes.Defult;
     [JsonPropertyName("mb_part_width")]
     public WidthHeightPartMode MbPartWidth { get; set; }
     [JsonPropertyName("mb_part_height")]
@@ -728,6 +1254,7 @@ public class SliceTypeMicroblock
     public List<PandSP_SliceMicroblock> PandSPSliceMacroblocks { get; set; } = new List<PandSP_SliceMicroblock>();
     public List<SliceSubMacroblock> PSubMacroblocks { get; set; } = new List<SliceSubMacroblock>();
     public List<SliceSubMacroblock> BSubMacroblocks { get; set; } = new List<SliceSubMacroblock>();
+    public List<ChromaFormat> ChromaWidthHeight { get; set; } = new List<ChromaFormat>();
 }
 
 public class ChromaFormat

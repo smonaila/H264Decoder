@@ -130,6 +130,41 @@ public class MicroblockTypes
         }
     }
 
+    
+    public SliceMicroblock? GetMbType(uint mb_type)
+    {
+        try
+        {
+            if (SynElement.Slicetype == Slicetype.I || SynElement.Slicetype == Slicetype.SI)
+            {
+                I_SliceMicroblock? macroblock = (from mb in ISliceTypeTable
+                                                 where mb.MbType == mb_type
+                                                 select mb).FirstOrDefault();
+                return macroblock;
+            }
+            else if (SynElement.Slicetype == Slicetype.B)
+            {
+                // Search the table for Microblocks of type B
+                BSliceMacroblock? macroblock = (from bsliceMB in BSliceMacroblocks
+                                                where bsliceMB.MbType == mb_type
+                                                select bsliceMB).FirstOrDefault();
+                return macroblock;
+            }
+            else if (SynElement.Slicetype == Slicetype.P || SynElement.Slicetype == Slicetype.SP)
+            {
+                PandSP_SliceMicroblock? macroblock = (from mb in PandSPSliceMacroblocks
+                                                      where mb.MbType == mb_type
+                                                      select mb).FirstOrDefault();
+                return macroblock;
+            }
+            return new SliceMicroblock();
+        }
+        catch (System.Exception)
+        {
+            throw;
+        }
+    }
+
     // This is the method that is going go through the process of determining the type of slice and the 
     // prediction mode an return the prediction mode.
     public PredictionModes MbPartPredMode(uint mb_type, uint part)
@@ -148,6 +183,7 @@ public class MicroblockTypes
                 (from mbp in microblock.NumMbPartions
                  where mbp.NumberOfPart == part
                  select mbp).FirstOrDefault() : new NumMbPartions();
+
                 predictionMode = numMbPartions != null ? numMbPartions.PredictionModes : PredictionModes.Invalid;
             }
             else if(mb_type == 0)
@@ -206,8 +242,13 @@ public class MicroblockTypes
             {
                 var macroblock = (from PandSPMb in PandSPSliceMacroblocks
                                   where PandSPMb.MbType == mb_type
-                                  select PandSPMb).FirstOrDefault();
-                
+                                  select PandSPMb).FirstOrDefault();                
+                numMbPartModes = macroblock != null ? macroblock.NumMbPart : NumMbPartModes.Defult;
+            }else if (SynElement.Slicetype == Slicetype.B || SynElement.Slicetype == Slicetype.BS)
+            {
+                var macroblock = (from bSliceMb in BSliceMacroblocks
+                                  where bSliceMb.MbType == mb_type
+                                  select bSliceMb).FirstOrDefault();
                 numMbPartModes = macroblock != null ? macroblock.NumMbPart : NumMbPartModes.Defult;
             }
             return numMbPartModes;
