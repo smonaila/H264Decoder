@@ -97,9 +97,9 @@ public class SubMbPredLayer
 public class MbPred
 {
     public bool[] prev_intra4x4_pred_mode_flag { get; set; } = new bool[16];
-    public List<int> rem_intra4x4_pred_mode { get; set; } = new List<int>();
+    public int[] rem_intra4x4_pred_mode { get; set; } = new int[16];
     public bool[] prev_intra8x8_pred_mode_flag { get; set; } = new bool[4];
-    public List<int> rem_intra8x8_pred_mode { get; set; } = new List<int>();
+    public int[] rem_intra8x8_pred_mode { get; set; } = new int[4];
     public int intra_chroma_pred_mode { get; set; }
     public List<int> ref_idx_l0 { get; set; } = new List<int>();
     public int[,,] mvd_l0 { get; set; } = default!;

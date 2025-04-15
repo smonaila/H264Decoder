@@ -50,7 +50,7 @@ public class MbAddressComputation
         
         luma4x4blkIdxA = new BlockIdx();
         luma4x4blkIdxA.Available = mbAddressA.Available == true ? true : false;
-        luma4x4blkIdxA.Idx = luma4x4blkIdxA.Available ? Get4x4LumaBlockIndices(neighbouringLocation.Location) : -1;
+        luma4x4blkIdxA.LumaBlkIdx = luma4x4blkIdxA.Available ? Get4x4LumaBlockIndices(neighbouringLocation.Location) : -1;
         
         LumaLocation = new Point(UpperLeftLumaLocation.X + mbAddressB.GetDiffLumaLocation.X,
         UpperLeftLumaLocation.Y + mbAddressB.GetDiffLumaLocation.Y);
@@ -59,7 +59,7 @@ public class MbAddressComputation
 
         luma4x4blkIdxB = new BlockIdx();
         luma4x4blkIdxB.Available = mbAddressB.Available == true ? true : false;
-        luma4x4blkIdxB.Idx = luma4x4blkIdxB.Available ? Get4x4LumaBlockIndices(neighbouringLocation.Location) : -1;
+        luma4x4blkIdxB.LumaBlkIdx = luma4x4blkIdxB.Available ? Get4x4LumaBlockIndices(neighbouringLocation.Location) : -1;
 
         Neighbouring4x4LumaBlocks neighbouring4X4LumaBlocks = new Neighbouring4x4LumaBlocks();
         neighbouring4X4LumaBlocks.Luma4x4BlkIdxA = luma4x4blkIdxA;

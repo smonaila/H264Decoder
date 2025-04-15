@@ -49,10 +49,5 @@ namespace MathExtensionMethods
         {
             return (x, y);
         }
-
-        internal static int Clip1Y(object value)
-        {
-            throw new NotImplementedException();
-        }
     }
 }

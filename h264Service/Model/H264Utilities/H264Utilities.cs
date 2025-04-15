@@ -43,7 +43,7 @@ public static partial class Descriptors
     /// <param name="sizeOfScalingList"></param>
     /// <param name="useDefaultScalingMatrixFlag"></param>
     /// <returns>An Array of Scaling list values.</returns>
-    public static int[] scaling_list(this BitList bitStream, int[] scalingList, int sizeOfScalingList, bool useDefaultScalingMatrixFlag)
+    public static int[,] scaling_list(this BitList bitStream, int[,] scalingList, int scaleIndex, int sizeOfScalingList, bool useDefaultScalingMatrixFlag)
     {
         try
         {
@@ -58,8 +58,8 @@ public static partial class Descriptors
                     nextScale = (lastScale + delta_scale + 256) % 256;
                     useDefaultScalingMatrixFlag = j == 0 && nextScale == 0;
                 }
-                scalingList[j] = (nextScale == 0) ? lastScale : nextScale;
-                lastScale = scalingList[j];
+                scalingList[scaleIndex, j] = (nextScale == 0) ? lastScale : nextScale;
+                lastScale = scalingList[scaleIndex, j];
             }
             return scalingList;
         }

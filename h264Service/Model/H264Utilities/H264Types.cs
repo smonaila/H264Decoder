@@ -15,6 +15,13 @@ using static h264.NALUnits.SliceHeader;
 
 namespace H264.Types;
 
+// Create types to Serialise 2D Arrays
+public class Serializable2DArray
+{
+    public int[] Ints { get; set; } = default!;
+    public int IntIdx { get; set; } = default!;
+}
+
 // Intra4x4PredMode[luma4x4BlkIdx] and associated.
 public enum Intra4x4PredModes
 {
@@ -57,6 +64,20 @@ public class ResSampleSource
     public int Luma4x4BlkIdx { get; set; }
 } 
 
+public class ChromaQParameter
+{
+    [JsonPropertyName("QPc")]
+    public List<QPTable> QParameters { get; set; } = new List<QPTable>();
+}
+
+public class QPTable
+{
+    [JsonPropertyName("qPi")]
+    public int QPi { get; set; }
+    [JsonPropertyName("qp_c")]
+    public int QPc { get; set; }    
+}
+
 // Macroblock address types.
 public class MbAddress
 {
@@ -67,19 +88,31 @@ public class MbAddress
     public Point GetDiffLumaLocation { get; set; }
     public bool Available { get; set; }
     public int TotalCoeff { get; set; }
-    public int[,] ConstructedLumas { get; set; } = default!;
+    public List<Serializable2DArray> ConstructedLumas { get; set; } = default!;
     public int QP { get; set; }
     public CoeffLevelType CoeffLevelType { get; set; }
-
+    public Intra4x4PredModes[] Intra4X4PredMode { get; set; } = new Intra4x4PredModes[16];
+    public List<BlockIdx> Blocks { get; set; } = new List<BlockIdx>();
+    public int CurrentBlkIdx { get; set; }
     public int[] IntraDCLevels { get; set; } = default!;
-    public int[,] IntraACLevels { get; set; } = default!;
-    public int[,] LumaLevels4x4 { get; set; } = default!;
-    public int[,] LumaLevels8x8 { get; set; } = default!;
+    public List<Serializable2DArray> IntraACLevels { get; set; } = default!;
+    public List<Serializable2DArray> LumaLevels4x4 { get; set; } = default!;
+    public List<Serializable2DArray> LumaLevels8x8 { get; set; } = default!;
 
     public int[] ChromaDCLevels { get; set; } = default!;
-    public int[,] ChromaACLevels { get; set; } = default!;
-    public int[,] CbChromaLevels4x4 { get; set; } = default!;
-    public int[,] CrChromaLevels8x8 { get; set; } = default!;
+    public List<Serializable2DArray> ChromaACLevels { get; set; } = default!;
+    public List<Serializable2DArray> CbChromaLevels4x4 { get; set; } = default!;
+    public List<Serializable2DArray> CrChromaLevels8x8 { get; set; } = default!;
+    public int[] CbIntra16x16DCLevel { get; set; } = default!;
+    public List<Serializable2DArray> CbIntra16x16ACLevel { get; set; } = default!;
+    public List<Serializable2DArray> CbLevel4x4 { get; set; } = default!;
+    public List<Serializable2DArray> CbLevel8x8 { get; set; } = default!;
+    public int[] CrIntra16x16DCLevel { get; set; } = default!;
+    public List<Serializable2DArray> CrIntra16x16ACLevel { get; set; } = default!;
+    public List<Serializable2DArray> CrLevel4x4 { get; set; } = default!;
+    public List<Serializable2DArray> CrLevel8x8 { get; set; } = default!;
+
+    public MbPred IntraMbPredMode { get; set; } = default!;
 }
 
 public class ZerosTableList
@@ -146,6 +179,7 @@ public enum CoeffLevelType
     ChromaACLevel,
     Level8x8
 }
+
 public class CAVLCSettings
 {
     [JsonPropertyName("cavlc_coeff_level_type")]
@@ -164,7 +198,7 @@ public enum MbAddressNeighbour
 public class NeighbouringLocation
 {
     public MbAddressNeighbour? MbAddress { get; set; }
-    public Point Location { get; set;}
+    public Point Location { get; set; }
 }   
 
 public class NeighbouringMbAndAvailability
@@ -185,19 +219,11 @@ public class Neighbouring4x4LumaBlocks
 
 public class BlockIdx
 {
-    public int Idx { get; set; }
+    public int LumaBlkIdx { get; set; }
     public (int, int) GetLumaLocation { get; set; }
     public bool Available { get; set; }
-    public int TotalCoeff { get; set; } 
-    public CoeffLevelType CoeffTypes { get; set; }
-    public int[] Coeff { get; set; } = default!;
-    public int[] IntraDCLevels { get; set; } = default!;
-    public int[,] LumaLevels4x4 { get; set; } = default!;
-    public int[,] LumaLevels8x8 { get; set; } = default!;
-    public int[] ChromaDCLevels { get; set; } = default!;
-    public int[] ChromaACLevels { get; set; } = default!;
-    public int[,] CbChromaLevels4x4 { get; set; } = default!;
-    public int[,] CrChromaLevels8x8 { get; set; } = default!;
+    public int TotalCoeff { get; set; }
+    public MbPred IntraMbPredMode { get; set; } = default!;
 }
 
 public interface ICoefficients
@@ -536,28 +562,37 @@ public class ResidualBlockCAVLC : ICoefficients
             {
                 BlockIdx? blkA = null, blkB = null;
                 MbAddress? MbAddressA = null, MbAddressB = null;
-                if (cAVLCSettings.CoeffLevelType == CoeffLevelType.Intra16x16DCLevel)
+                MbAddress? CurrMbAddress = (from mbA in MbAddresses
+                                            where mbA.Address == globalVariables.CurrMbAddr
+                                            select mbA).FirstOrDefault();
+                CurrMbAddress = CurrMbAddress != null ? CurrMbAddress : throw new Exception();
+
+                int Luma4x4BlkIdx;
+                if (cAVLCSettings.CoeffLevelType == CoeffLevelType.Intra16x16DCLevel || 
+                    cAVLCSettings.CoeffLevelType == CoeffLevelType.CbIntra16x16DCLevel ||
+                    cAVLCSettings.CoeffLevelType == CoeffLevelType.CrIntra16x16DCLevel)
                 {
-                    int Luma4x4BlkIdx = 0;
-                    Neighbouring4x4LumaBlocks neighbouring4X4LumaBlocks = mbAddressComputation.GetNeighbouring4x4LumaBlk(Luma4x4BlkIdx);       
-                    blkA = neighbouring4X4LumaBlocks.Luma4x4BlkIdxA;
-                    blkB = neighbouring4X4LumaBlocks.Luma4x4BlkIdxB;   
-                    MbAddressA = neighbouring4X4LumaBlocks.MbAddressA;
-                    MbAddressB = neighbouring4X4LumaBlocks.MbAddressB;      
+                    Luma4x4BlkIdx = 0;                          
+                }else
+                {
+                    Luma4x4BlkIdx = CurrMbAddress.CurrentBlkIdx;
                 }
+
+                Neighbouring4x4LumaBlocks neighbouring4X4LumaBlocks = mbAddressComputation.GetNeighbouring4x4LumaBlk(Luma4x4BlkIdx);
+                blkA = neighbouring4X4LumaBlocks.Luma4x4BlkIdxA;
+                blkB = neighbouring4X4LumaBlocks.Luma4x4BlkIdxB;
+                MbAddressA = neighbouring4X4LumaBlocks.MbAddressA;
+                MbAddressB = neighbouring4X4LumaBlocks.MbAddressB;
 
                 int availableFlagA = 1;
                 int availableFlagB = 1;
 
-                blkA = blkA ?? new BlockIdx();
-                blkB = blkB ?? new BlockIdx();
-                MbAddressA = MbAddressA ?? new MbAddress();
-                MbAddressB = MbAddressB ?? new MbAddress();
+                blkA = blkA != null ? blkA : throw new Exception();
+                blkB = blkB != null ? blkB : throw new Exception();
+                MbAddressA = MbAddressA != null ? MbAddressA : throw new Exception();
+                MbAddressB = MbAddressB != null ? MbAddressB : throw new Exception();
 
-                MbAddress? CurrMbAddress = (from mbA in MbAddresses
-                                            where mbA.Address == globalVariables.CurrMbAddr
-                                            select mbA).FirstOrDefault();
-                CurrMbAddress = CurrMbAddress != null ? CurrMbAddress : new MbAddress();
+                
 
                 if (!MbAddressA.Available || (Pps.constrained_intra_pred_flag && 
                     (CurrMbAddress.SliceType == (int)Slicetype.I || 
@@ -617,7 +652,7 @@ public class ResidualBlockCAVLC : ICoefficients
                             nA = 16;
                         } else
                         {
-                            nA = blkA.Idx;
+                            nA = blkA.LumaBlkIdx;
                         }
                     }
                 }
@@ -629,7 +664,6 @@ public class ResidualBlockCAVLC : ICoefficients
                         MbAddressB.SliceType == (int)Slicetype.B ||
                         MbAddressB.SliceType == (int)Slicetype.BS)
                     {
-
                         synElemSlice.Slicetype = (Slicetype)MbAddressA.SliceType;
                         macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);
                         SliceMicroblock? sliceMacroblock = macroblockTypes.GetMbType((uint)MbAddressB.MbType);
@@ -654,7 +688,7 @@ public class ResidualBlockCAVLC : ICoefficients
                             nB = 16;
                         }else
                         {
-                            nB = blkB.Idx;
+                            nB = blkB.LumaBlkIdx;
                         }
                     }
                 }
@@ -704,8 +738,7 @@ public class ResidualBlockCAVLC : ICoefficients
                     {
                         totalZerosTable = (from tzTable in totalZerosList.TotalZerosTables
                                            where tzTable.TableName == "table_9_9a"
-                                           select tzTable).FirstOrDefault();
-                                               
+                                           select tzTable).FirstOrDefault();                                               
                     } else if (maxNumCoeff == 8)
                     {
                         totalZerosTable = (from tzTable in totalZerosList.TotalZerosTables
@@ -744,7 +777,6 @@ public class ResidualBlockCAVLC : ICoefficients
                     total_zeros = totalZeros.total_zeros_value;
                 }
                 zerosLeft = total_zeros;
-
                 for (int i = 0; i < totalNonZeros - 1; i++)
                 {
                     if (zerosLeft > 0)
@@ -770,8 +802,7 @@ public class ResidualBlockCAVLC : ICoefficients
                     zerosLeft = zerosLeft - runVal[i];
                 }
                 runVal[totalNonZeros - 1] = zerosLeft;
-            }
-            
+            }            
             return runVal;
         }
         catch (System.Exception)
@@ -779,13 +810,11 @@ public class ResidualBlockCAVLC : ICoefficients
             throw;
         }
     }
-
     public Tuple<int, int> coeff_token { get; set; } = default!;
     public bool trailing_ones_sign_flag { get; set; }
     public int level_prefix { get; set; }
     public int level_suffix { get; set; }
 }
-
 // Create a class for ResidualLuma syntax element
 public class ResidualLuma
 {
@@ -794,6 +823,7 @@ public class ResidualLuma
     private MicroblockTypes macroblockType;
     private MacroblockLayer macroblockLayer;
     private Extras Extras;
+    private SettingSets settingSets;
     private PPS PPS;
     private SPS SPS;
     private GlobalVariables GlobalVariables;
@@ -807,7 +837,7 @@ public class ResidualLuma
     public ResidualLuma(ICoefficients coefficients, ICodecSettingsService service)
     {
         settingsService = service;
-        SettingSets settingSets = settingsService.GetCodecSettings();
+        settingSets = settingsService.GetCodecSettings();
         PPS = settingSets.GetPPS;
         SPS = settingSets.GetSPS;
         GlobalVariables = settingSets.GlobalVariables;
@@ -819,7 +849,6 @@ public class ResidualLuma
         macroblockType = new MicroblockTypes(service, synElemSlice);
         Coefficients = coefficients;
     }
-
     public void GetResidualLuma(out int[] i16x16DCLevel, out int[,] i16x16ACLevel, out int[,] level4x4,
     out int[,] level8x8, int startIdx, int endIdx)
     {
@@ -827,6 +856,12 @@ public class ResidualLuma
         GlobalFunctions globalFunctions = new GlobalFunctions();
         CAVLCSettings CAVLCSettings = globalFunctions.GetCAVLCSettings();
         currMbStream.Close();
+        Extras extras = settingSets.Extras;
+        MbAddress? CurrMBAddr = (from mbA in extras.MbAddresses
+                                 where mbA.Address == GlobalVariables.CurrMbAddr
+                                 select mbA).FirstOrDefault();
+        CurrMBAddr = CurrMBAddr != null ? CurrMBAddr : throw new Exception();
+
         globalFunctions.SetCoeffLevelType(CAVLCSettings);
 
         if (startIdx == 0 && macroblockType.MbPartPredMode(macroblockLayer.mb_type, 0) == PredictionModes.Intra_16x16)
@@ -835,11 +870,12 @@ public class ResidualLuma
             globalFunctions.SetCoeffLevelType(CAVLCSettings);
             I16x16DCLevel = Coefficients.GetCoefficients(I16x16DCLevel, 0, 15, 16);
         }
-
         for (int i8x8 = 0; i8x8 < 4; i8x8++)
         {
             if (!macroblockLayer.transform_size_8x8_flag || !PPS.entropy_coding_mode_flag)
             {
+                BlockIdx blockIdx = new BlockIdx();
+                
                 for (int i4x4 = 0; i4x4 < 4; i4x4++)
                 {
                     if ((GlobalVariables.CodedBlockPatternLuma & (1 << i8x8)) > 0)
@@ -848,17 +884,24 @@ public class ResidualLuma
                         {
                             int[] tempCoefficient = new int[15];
                             CAVLCSettings.CoeffLevelType = CoeffLevelType.Intra16x16ACLevel;
+                            CurrMBAddr.CurrentBlkIdx = i8x8 * 4 + i4x4;
                             globalFunctions.SetCoeffLevelType(CAVLCSettings);
                             int[] coefficients = Coefficients.GetCoefficients(tempCoefficient,
                             Math.Max(0, startIdx - 1), endIdx - 1, 15);
-
                             I16x16ACLevel = h264Array.Copy2DArray(I16x16ACLevel, i8x8 * 4 + i4x4, coefficients, 0, coefficients.Length);
                         }
                         else
                         {
                             int[] tempCoefficient = new int[16];
                             CAVLCSettings.CoeffLevelType = CoeffLevelType.LumaLevel4x4;
+                            CurrMBAddr.CurrentBlkIdx = i8x8 * 4 + i4x4;
+                            blockIdx.LumaBlkIdx = CurrMBAddr.CurrentBlkIdx;
+                            
+                            CurrMBAddr.Blocks.Add(blockIdx);
+
+                            settingsService.Update<Extras>(extras);
                             globalFunctions.SetCoeffLevelType(CAVLCSettings);
+                            
                             int[] coefficients = Coefficients.GetCoefficients(tempCoefficient,
                             startIdx, endIdx, 16);
                             Level4x4 = h264Array.Copy2DArray(Level4x4, i8x8 * 4 + i4x4, coefficients, 0, coefficients.Length);
@@ -882,7 +925,6 @@ public class ResidualLuma
                             Level4x4[i8x8 * 4 + i4x4, i] = 0;
                         }
                     }
-
                     if (!PPS.entropy_coding_mode_flag && macroblockLayer.transform_size_8x8_flag)
                     {
                         CAVLCSettings.CoeffLevelType = CoeffLevelType.Level8x8;
@@ -898,9 +940,9 @@ public class ResidualLuma
             {
                 int[] tempCoefficient = new int[64];
                 CAVLCSettings.CoeffLevelType = CoeffLevelType.Level8x8;
+                CurrMBAddr.CurrentBlkIdx = i8x8;
                 globalFunctions.SetCoeffLevelType(CAVLCSettings);
-                int[] coefficients = Coefficients.GetCoefficients(tempCoefficient, 4 * startIdx, 4 * endIdx + 3, 64);
-                
+                int[] coefficients = Coefficients.GetCoefficients(tempCoefficient, 4 * startIdx, 4 * endIdx + 3, 64);                
                 h264Array.Copy2DArray(Level8x8, i8x8, coefficients, 0, coefficients.Length);
             }
             else
@@ -939,7 +981,6 @@ public class Residual
 
     // Propeties for Loading Data from tables
 }
-
 public class Extras
 {
     [JsonPropertyName("mcrb")]
@@ -947,7 +988,6 @@ public class Extras
     [JsonPropertyName("mb_list")]
     public List<MbAddress> MbAddresses { get; set; } = default!;
 }
-
 public class ChromaArrayIdc
 {
     [JsonPropertyName("coded_block_pattern_mapping_chroma_is_1_or_2")]
@@ -955,7 +995,6 @@ public class ChromaArrayIdc
     [JsonPropertyName("coded_block_pattern_mapping_chroma_is_0_or_3")]
     public List<CodedBlockArrayType> CodedBlockPatternsChroma0or3 { get; set; } = new List<CodedBlockArrayType>();
 }
-
 public class CodedBlockArrayType
 {
     [JsonPropertyName("code_num")]
@@ -985,7 +1024,6 @@ public enum SynElement
     mb_field_decoding_flag,
     transform_8x8_mode_flag
 }
-
 public class CtxTable
 {
     [JsonPropertyName("CtxIdx")]
@@ -995,7 +1033,6 @@ public class CtxTable
     [JsonPropertyName("n")]
     public int N { get; set; }
 }
-
 public class ContextVariable
 {
     public int CtxIdx { get; set; }
@@ -1006,14 +1043,12 @@ public class ContextVariable
     public int PStateIdx { get; set; }
     public bool IsInitialized { get; set; }
 }
-
 public class SynElemSlice
 {
     public SynElement SynElement { get; set; }
     public Slicetype Slicetype { get; set; }
     public SettingSets? settingSets { get; set; }
 }
-
 public enum SliceGroupMapType
 {
     BoxOutClockwise = 0,
@@ -1023,7 +1058,6 @@ public enum SliceGroupMapType
     WipeRight = 4,
     WipeLeft = 5
 }
-
 public enum PredictionModes
 {
     Intra_4x4 = 0,

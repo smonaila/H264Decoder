@@ -135,7 +135,7 @@ public class CodecSettings : ICodecSettingsService
             }
 
         }
-        catch (System.Exception)
+        catch (System.Exception ex)
         {
            
         }
@@ -238,8 +238,14 @@ public class GlobalVariables
     [JsonPropertyName("filter_offset_b")]
     public int FilterOffsetB { get; internal set; }
     [JsonPropertyName("slice_group_change_rate")]
-    public uint SliceGroupChangeRate { get; internal set; }
+    public uint SliceGroupChangeRate { get; set; }
     public int QPYprev { get; set; }
-    public long QPprime { get; internal set; }
+    public long QPprimeY { get; set; }
     public bool TransformBypassModeFlag { get; set; }
+    public long QPY { get; set; }
+    public long QPC { get; set; }
+    public long QPprimeC { get; set; }
+    public ChromaQParameter Qparameters { get; set; }
+    public List<Serializable2DArray> ScalingList4x4 { get; set; }
+    public List<Serializable2DArray> ScalingList8x8 { get; set; }
 }
