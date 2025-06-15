@@ -1216,7 +1216,7 @@ public class H264Parsers
                         sliceData.mb_field_decoding_flag = Pps.entropy_coding_mode_flag ? bitStream.ae() == 1 : bitStream.u(1) == 1;
                     }
                     settingsService.Update<SliceData>(sliceData);
-                    MbAddress MbAddress = new MbAddress();
+                    MbAddress? MbAddress = new MbAddress();
                     MbAddress.Address = globalVariables.CurrMbAddr;
                     MbAddress.FrameNum = (int)sliceHeader.frame_num; 
                     MbAddress.SliceType = (int)sliceHeader.slice_type;
@@ -1230,6 +1230,10 @@ public class H264Parsers
 
                     // Decode Transformed Coefficients
                     TransCoeffDec(MbAddress);
+                    codecSettings = settingsService.GetCodecSettings();
+                    extras = codecSettings.Extras;
+                    MbAddress = extras.MbAddresses.Where(mb => mb.Address == MbAddress.Address).FirstOrDefault();
+                    MbAddress = MbAddress != null ? MbAddress : throw new Exception();
                 }
                 if (!Pps.entropy_coding_mode_flag)
                 {
@@ -1300,8 +1304,7 @@ public class H264Parsers
             return new int[4, 4];
         }
         catch (System.Exception)
-        {
-            
+        {            
             throw;
         }
     }
@@ -1335,13 +1338,14 @@ public class H264Parsers
                 resSampleSource.U = c;
                 r = ScalingAndTransResidual4x4(resSampleSource);
 
+                Intra4x4PredModes predModes = Intra4x4PredMode(Luma4x4BlkIdx);
                 if (globalVariables.TransformBypassModeFlag && 
                     macroblockTypes.MbPartPredMode((uint)CurrAddr.MbType, 0) == PredictionModes.Intra_4x4 &&
-                    Intra4x4PredMode(Luma4x4BlkIdx) == Intra4x4PredModes.Intra4x4Vertical || 
-                    Intra4x4PredMode(Luma4x4BlkIdx) == Intra4x4PredModes.Intra4x4Horizontal)
+                    (predModes == Intra4x4PredModes.Intra4x4Vertical || 
+                     predModes == Intra4x4PredModes.Intra4x4Horizontal))
                 {
                     int nW = 4, nH = 4;
-                    r = IResTransBypassDec(nW, nH, Intra4x4PredMode(Luma4x4BlkIdx), r);                    
+                    r = IResTransBypassDec(nW, nH, predModes, r);                    
                 }
                 Point UpperLeftLuma = mbAddressComputation.Get4x4LumaLocation(Luma4x4BlkIdx);
 
@@ -1387,8 +1391,7 @@ public class H264Parsers
             return predY;
         }
         catch (System.Exception)
-        {
-            
+        {            
             throw;
         }
     }
@@ -1484,8 +1487,7 @@ public class H264Parsers
                     j = 0; i = 0;
                 }
                 settingsService.Update(extras);                
-            } 
-
+            }
         }
         catch (System.Exception)
         {            
@@ -2016,7 +2018,6 @@ public class H264Parsers
             {
                 intraMxMPredModelA = 2;
             }
-
             synElemSlice.Slicetype = (Slicetype)mbAddressB.SliceType;
             macroblockTypes = new MicroblockTypes(codecSettings, synElemSlice);     
             if (dcPredModePredictedFlag || 
@@ -2025,7 +2026,6 @@ public class H264Parsers
             {
                 intraMxMPredModelB = 2;
             }
-
             if (!dcPredModePredictedFlag)
             {
                 synElemSlice.Slicetype = (Slicetype)mbAddressA.SliceType;
@@ -2179,6 +2179,7 @@ public class H264Parsers
             }
             if (resSampleSource.SampleType == SampleType.Y && !sMbFlag)
             {
+                globalVariables.QPprimeC = GetQprimeC(resSampleSource);
                 qP = globalVariables.QPprimeY;
             } else if (resSampleSource.SampleType == SampleType.Y && sMbFlag)
             {
@@ -2284,7 +2285,12 @@ public class H264Parsers
                             d[row, col] = (resSampleSource.U[row, col] * LevelScale4x4(qP % 6, row, col, resSampleSource.SampleType)) << (((int)qP / 6) - 4);
                         } else
                         {
-                            d[row, col] = (resSampleSource.U[row, col] * LevelScale4x4(qP % 6, row, col, resSampleSource.SampleType) + (int)Math.Pow(2, 3 - (qP/2))) >> ((int)(4 - (qP / 6)));
+                            int LevelScale = LevelScale4x4(qP % 6, row, col, resSampleSource.SampleType);
+                            int dValue = resSampleSource.U[row, col];
+                            int product = dValue * LevelScale;
+                            int qpValue = (int)Math.Pow(2, 3 - (qP / 6));
+                            int qpDivisor = 4 - (int)(qP / 6);
+                            d[row, col] = (product + qpValue) >> qpDivisor;
                         }
                     }
                 }
@@ -2441,7 +2447,7 @@ public class H264Parsers
             c[0, 0] = Coeff[Luma4x4BlkIdx, 0];
             c[0, 1] = Coeff[Luma4x4BlkIdx, 1];
             c[1, 0] = Coeff[Luma4x4BlkIdx, 2];
-            c[2, 1] = Coeff[Luma4x4BlkIdx, 3];
+            c[2, 0] = Coeff[Luma4x4BlkIdx, 3];
             c[1, 1] = Coeff[Luma4x4BlkIdx, 4];
             c[0, 2] = Coeff[Luma4x4BlkIdx, 5];
             c[0, 3] = Coeff[Luma4x4BlkIdx, 6];

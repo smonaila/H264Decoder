@@ -70,6 +70,20 @@ public static partial class Descriptors
     }
 }
 
+// Mutliply a Matrices
+public static int[,] GetMatrixProduct(int[,] matrixA, int[,] matrixB)
+{
+    try
+    {
+        int Result = new int[matrixA.GetLength(0), ];
+        
+    }
+    catch (System.Exception ex)
+    {        
+        throw;
+    }    
+}
+
 public static partial class H264Utilities
 {
     /// <summary>
